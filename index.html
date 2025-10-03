@@ -1,24 +1,10 @@
-Com certeza\! Adicionar o controle de tamanho de fonte é um excelente recurso de acessibilidade. Além disso, fiz um grande *upgrade* no CSS para que o design se aproxime da estética "gamer/futurista" do link de referência.
 
-Esta é a **Versão 24.2**, que inclui:
-
-1.  **Controle de Tamanho da Fonte (Zoom)** na tela de Configurações.
-2.  **Novo Design (CSS)** com tema escuro padrão e efeitos de brilho/sombra mais intensos, similar ao que você pediu.
-3.  Todas as correções de acessibilidade anteriores (Libras, TTS, Dislexia).
-
-**Atenção:** Como antes, substitua **TODO** o conteúdo do seu arquivo `index.html` pelo código abaixo.
-
------
-
-## 💾 ARQUIVO FINAL: MATEMÁGICA - V. 24.2 (DESIGN MELHORADO + ZOOM)
-
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matemágica - A Jornada da Fluência (V. 24.2)</title>
+    <title>Matemágica - A Jornada da Fluência (V. 24.4)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Open+Dyslexic:wght@400;700&display=swap" rel="stylesheet">
@@ -43,7 +29,7 @@ Esta é a **Versão 24.2**, que inclui:
             --brilho-secundario: 0px 0px 15px rgba(52, 152, 219, 0.8); /* Brilho Azul Elétrico */
             --transicao-padrao: all 0.3s ease;
 
-            /* NOVO: Variável de Escala de Fonte (Início: 1.0) */
+            /* Variável de Escala de Fonte */
             --font-scale: 1.0; 
         }
 
@@ -78,7 +64,7 @@ Esta é a **Versão 24.2**, que inclui:
             box-shadow: var(--sombra-magica) !important;
             border: 1px solid var(--cor-primaria);
         }
-        button:not(.btn-principal):not(.btn-secundario), select, input:not([type="checkbox"]) {
+        button:not(.btn-principal):not(.btn-secundario):not(.btn-voltar), select, input:not([type="checkbox"]) {
             background-color: #2C3E50; /* Azul Escuro */
             color: var(--cor-texto-escuro);
             border: 1px solid var(--cor-secundaria);
@@ -191,6 +177,26 @@ Esta é a **Versão 24.2**, que inclui:
             transform: translateY(-2px);
         }
 
+        /* Novo Botão Voltar para o Início */
+        .btn-voltar {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background-color: var(--cor-primaria);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transition: transform 0.2s;
+        }
+        .btn-voltar:hover {
+            background-color: var(--cor-acento);
+            transform: scale(1.05);
+        }
+
         /* === ELEMENTOS DE JOGO === */
         .contador-combo {
             font-size: calc(2.2em * var(--font-scale));
@@ -231,6 +237,8 @@ Esta é a **Versão 24.2**, que inclui:
             border-radius: 12px;
             transition: var(--transicao-padrao);
             font-weight: 600;
+            text-align: left; /* Alinhamento para o número do atalho */
+            padding-left: calc(30px * var(--font-scale));
         }
         .opcoes-resposta button:hover {
             background-color: var(--cor-primaria);
@@ -248,17 +256,24 @@ Esta é a **Versão 24.2**, que inclui:
             color: var(--cor-texto-escuro) !important;
             box-shadow: 0 0 15px var(--cor-erro) !important;
         }
+        /* DESTAQUE DA RESPOSTA CORRETA */
+        .resposta-correta {
+             background-color: #1A5E35 !important; /* Verde mais escuro para destaque */
+             color: var(--cor-texto-escuro) !important;
+             border: 2px solid var(--cor-acerto) !important;
+             box-shadow: 0 0 15px var(--cor-acerto) !important;
+        }
 
         .mentores-container {
             display: flex;
             justify-content: center;
             align-items: flex-end;
-            gap: calc(25px * var(--font-scale));
-            margin-top: calc(30px * var(--font-scale));
+            gap: calc(40px * var(--font-scale)); /* Mais espaçamento */
+            margin-top: calc(40px * var(--font-scale));
         }
         .mentor-avatar {
-            width: calc(70px * var(--font-scale));
-            height: calc(70px * var(--font-scale));
+            width: calc(90px * var(--font-scale)); /* Avatares Maiores */
+            height: calc(90px * var(--font-scale));
             border-radius: 50%;
             border: 4px solid var(--cor-acento);
             background-size: cover;
@@ -286,6 +301,14 @@ Esta é a **Versão 24.2**, que inclui:
         }
         
         /* === WCAG AAA / RESPONSIVIDADE === */
+        .top-bar {
+            width: 100%;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 15px;
+            position: relative;
+        }
         #btn-config {
             background-color: transparent;
             border: none;
@@ -294,12 +317,31 @@ Esta é a **Versão 24.2**, que inclui:
             color: var(--cor-primaria);
             transition: var(--transicao-padrao);
             text-shadow: var(--sombra-magica);
+            margin-left: 15px;
         }
         #btn-config:hover {
             color: var(--cor-acento);
             transform: rotate(15deg);
         }
         
+        /* Estilo para Janela Libras no canto superior esquerdo */
+        #janela-libras-global {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            width: 120px;
+            height: 80px;
+            background-color: #333;
+            color: white;
+            line-height: 80px;
+            text-align: center;
+            border-radius: 10px;
+            z-index: 2000;
+            font-size: 0.8em;
+            border: 2px solid var(--cor-acento);
+            box-shadow: 0 0 10px var(--cor-acento);
+        }
+
         @media screen and (max-width: 600px) {
             body { font-size: calc(1em * var(--font-scale)); }
             .header h1 { font-size: calc(2.8em * var(--font-scale)); }
@@ -307,7 +349,7 @@ Esta é a **Versão 24.2**, que inclui:
             h2 { font-size: calc(1.5em * var(--font-scale)); }
             .opcoes-container button, .opcoes-container select, .btn-principal, .btn-secundario { font-size: calc(1em * var(--font-scale)); padding: 12px 15px; }
             .questao-texto { font-size: calc(3em * var(--font-scale)); margin: 25px 0; }
-            .opcoes-resposta button { font-size: calc(1.3em * var(--font-scale)); padding: 15px; }
+            .opcoes-resposta button { font-size: calc(1.3em * var(--font-scale)); padding: 15px; padding-left: calc(25px * var(--font-scale)); }
 
             .barra-tempo-container {
                 position: fixed;
@@ -317,12 +359,13 @@ Esta é a **Versão 24.2**, que inclui:
                 margin: 0;
                 border-radius: 0;
                 z-index: 1000;
-                height: 10px; /* Reduz a altura para mobile */
+                height: 10px; 
             }
             .contador-combo {
                 position: fixed;
                 top: 15px;
-                left: 10px;
+                right: 10px; /* Movido para o lado direito para não colidir com Libras */
+                left: unset;
                 z-index: 1001;
                 background: rgba(0, 0, 0, 0.7);
                 padding: 5px 10px;
@@ -333,45 +376,64 @@ Esta é a **Versão 24.2**, que inclui:
             .container {
                 margin-top: 65px;
             }
+            .btn-voltar {
+                top: 10px;
+                left: 140px; /* Ajusta posição para Libras */
+                font-size: 0.8em;
+                padding: 8px 12px;
+            }
+            #janela-libras-global {
+                top: 5px;
+                left: 5px;
+                width: 100px;
+                height: 60px;
+                line-height: 60px;
+            }
         }
     </style>
 </head>
 <body class="tema-escuro">
 
+    <div id="janela-libras-global" style="display: none;">[Libras]</div>
+    
     <div id="tela-inicial" class="container"> 
+        <div class="top-bar">
+            <button id="btn-config" aria-label="Abrir Configurações">⚙️</button>
+        </div>
+        
         <header class="header">
             <h1 id="app-logo">Matemágica</h1>
             <p>A Jornada da Fluência Matemática</p>
         </header>
 
-        <div style="text-align: right; margin-bottom: 15px;">
-            <button id="btn-config" aria-label="Abrir Configurações">⚙️</button>
-        </div>
-
         <div class="card">
-            <h2>1. Escolha a Operação e Nível</h2>
+            <h2>1. Escolha a Operação</h2>
             
-            <div class="opcoes-container" style="margin-bottom: 25px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
-                <select id="select-operacao" aria-label="Selecione a Operação" style="flex-grow: 1; max-width: 250px;">
-                    <option value="mult_div">Multiplicação e Divisão</option>
-                    <option value="add_sub">Adição e Subtração</option>
-                    <option value="pot_rad">Potenciação e Radiciação</option>
-                </select>
-
-                <select id="select-nivel" aria-label="Selecione o Nível de Dificuldade" style="flex-grow: 1; max-width: 250px;">
-                    <option value="facil">Fácil (Tabuada 0-5)</option>
-                    <option value="medio">Médio (Tabuada 6-10)</option>
-                    <option value="avancado">Avançado (Tabuada 11-20+)</option>
-                </select>
+            <div class="opcoes-container" style="margin-bottom: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button data-operacao="adicao" class="btn-secundario">Adição (+)</button>
+                <button data-operacao="subtracao" class="btn-secundario">Subtração (-)</button>
+                <button data-operacao="multiplicacao" class="btn-secundario">Multiplicação (×)</button>
+                <button data-operacao="divisao" class="btn-secundario">Divisão (÷)</button>
+                <button data-operacao="potenciacao" class="btn-secundario">Potenciação ($$x^y$$)</button>
+                <button data-operacao="radiciacao" class="btn-secundario">Radiciação ($\sqrt{x}$)</button>
             </div>
             
-            <h2>2. Escolha o Modo de Jogo</h2>
+            <h2 id="titulo-modo" style="margin-top: 40px;">2. Escolha o Nível e Modo</h2>
+            
+            <select id="select-nivel" aria-label="Selecione o Nível de Dificuldade" style="width: 100%; margin-bottom: 20px;">
+                <option value="facil">Fácil (Números Baixos)</option>
+                <option value="medio">Médio (Números Intermediários)</option>
+                <option value="avancado">Avançado (Números Maiores)</option>
+            </select>
+
             <div class="opcoes-container" style="margin-bottom: 30px;">
                 <button id="modo-rapido" class="ativo" data-modo="rapido">Modo Rápido (10s)</button>
                 <button id="modo-normal" data-modo="normal">Modo Normal (Sem Tempo)</button>
             </div>
 
-            <button id="btn-iniciar" style="width: 100%;" class="btn-principal">INICIAR JORNADA MÁGICA</button>
+            <button id="btn-iniciar" style="width: 100%;" class="btn-principal" disabled>
+                SELECIONE A OPERAÇÃO
+            </button>
         </div>
         
         <div class="mentores-container">
@@ -380,7 +442,11 @@ Esta é a **Versão 24.2**, que inclui:
         </div>
     </div>
 
-    <div id="tela-jogo" class="container" style="display: none;">
+    <div id="tela-jogo" class="container" style="position: relative; display: none;">
+        <button id="btn-voltar-jogo" class="btn-voltar">
+            🏠 Voltar ao Início
+        </button>
+
         <div class="barra-tempo-container">
             <div id="barra-tempo" class="barra-tempo-progresso"></div>
         </div>
@@ -395,11 +461,11 @@ Esta é a **Versão 24.2**, que inclui:
                 </div>
             
             <button id="btn-avancar" style="display: none; margin-top: 30px;" class="btn-principal">AVANÇAR (Enter/Espaço)</button>
-            <button id="btn-dica" style="margin-top: 15px;" class="btn-secundario">FEITIÇO DA REGRA (+5s)</button>
+            <button id="btn-dica" style="margin-top: 15px;" class="btn-secundario">FEITIÇO DA REGRA (-1 Token)</button>
         </div>
 
         <div id="feedback-mentor" class="feedback-box">Aguardando sua resposta, Mago(a)!</div>
-        <div id="janela-libras" style="margin-top: 20px; height: 120px; background-color: #333; color: white; line-height: 120px; text-align: center; border-radius: 15px; display: none;">[Placeholder Libras para Feedback]</div>
+        <div id="janela-libras" style="display: none;">[Placeholder Libras para Feedback]</div>
     </div>
     
     <div id="tela-config" class="container" style="display: none;">
@@ -418,7 +484,7 @@ Esta é a **Versão 24.2**, que inclui:
                 <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 155, 89, 182), 0.3);">
 
                 <label for="toggle-tema" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Alternar Tema Claro/Escuro:</label>
-                <input type="checkbox" id="toggle-tema" role="switch" aria-label="Alternar para Tema Escuro">
+                <input type="checkbox" id="toggle-tema" role="switch" aria-label="Alternar para Tema Claro">
                 
                 <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 155, 89, 182), 0.3);">
 
@@ -457,78 +523,116 @@ Esta é a **Versão 24.2**, que inclui:
         // === MÓDULO DE DADOS E CONTEÚDO (CONTEUDO_MATEMAGICA) ===
         // ==========================================================
         
+        const MENSAGENS = {
+            // Nova array de elogios rápidos
+            elogios: [
+                "Fantástico! Você é um Mago da Fluência!",
+                "Incrível! Esse é o poder de um verdadeiro Aluno Mago!",
+                "Excelente! Não se distraia, mantenha o foco!",
+                "Uau! Sua concentração está no nível máximo!",
+                "Parabéns! Mantenha a sequência de acertos!"
+            ],
+            // Nova array de incentivos rápidos
+            incentivos: [
+                "Não desista! Use o erro para fortalecer sua magia!",
+                "Um pequeno deslize, mas a próxima será perfeita!",
+                "Tudo bem errar. Lembre-se da regra e avance!",
+                "Sua jornada continua! Inspire, expire e tente novamente.",
+                "O erro é um portal para o aprendizado. Volte mais forte!"
+            ],
+            
+            getRandomElogio: function() {
+                return this.elogios[Math.floor(Math.random() * this.elogios.length)];
+            },
+            getRandomIncentivo: function() {
+                return this.incentivos[Math.floor(Math.random() * this.incentivos.length)];
+            }
+        };
+
         const CONTEUDO = {
             gerarQuestao(operacao, nivel) {
                 let numMax1, numMax2, expoMax;
-                let isMultiDiv = operacao === 'mult_div';
-
+                
+                // Define limites com base no Nível
                 if (nivel === 'facil') {
-                    numMax1 = isMultiDiv ? 5 : 10;
-                    numMax2 = isMultiDiv ? 5 : 10;
-                    expoMax = 2; 
+                    numMax1 = 10; numMax2 = 10; expoMax = 2; 
                 } else if (nivel === 'medio') {
-                    numMax1 = isMultiDiv ? 10 : 50;
-                    numMax2 = isMultiDiv ? 10 : 50;
-                    expoMax = 3; 
+                    numMax1 = 50; numMax2 = 50; expoMax = 3; 
                 } else { // Avançado
-                    numMax1 = isMultiDiv ? 20 : 100;
-                    numMax2 = isMultiDiv ? 20 : 100;
-                    expoMax = 4;
+                    numMax1 = 100; numMax2 = 100; expoMax = 4;
                 }
 
                 let num1, num2, resultado, pergunta, operador, tipo;
 
-                if (operacao === 'mult_div') {
-                    tipo = Math.random() < 0.5 ? 'multiplicacao' : 'divisao';
-                    num1 = Math.floor(Math.random() * (numMax1 + 1));
-                    num2 = Math.floor(Math.random() * (numMax2 + 1)) || 1;
-                    
-                    if (tipo === 'multiplicacao') {
-                        operador = '×';
-                        resultado = num1 * num2;
-                        pergunta = `${num1} ${operador} ${num2}`;
-                    } else { 
-                        resultado = num1;
-                        num1 = resultado * num2; 
-                        operador = '÷';
-                        pergunta = `${num1} ${operador} ${num2}`;
-                    }
-                } else if (operacao === 'add_sub') {
-                    tipo = Math.random() < 0.5 ? 'adicao' : 'subtracao';
+                if (operacao === 'adicao') {
+                    tipo = 'adicao';
+                    operador = '+';
                     num1 = Math.floor(Math.random() * numMax1) + 1;
                     num2 = Math.floor(Math.random() * numMax2) + 1;
-                    
-                    if (tipo === 'adicao') {
-                        operador = '+';
-                        resultado = num1 + num2;
-                    } else { 
-                        if (num1 < num2) [num1, num2] = [num2, num1];
-                        operador = '-';
-                        resultado = num1 - num2;
-                    }
+                    resultado = num1 + num2;
                     pergunta = `${num1} ${operador} ${num2}`;
-                } else { // Potenciação e Radiciação
-                    tipo = Math.random() < 0.5 ? 'potenciacao' : 'radiciacao';
-
-                    if (tipo === 'potenciacao') {
-                        num1 = Math.floor(Math.random() * (numMax1 > 10 ? 5 : numMax1)) + 1;
-                        num2 = Math.floor(Math.random() * expoMax) + 2;
-                        resultado = Math.pow(num1, num2);
-                        pergunta = `${num1} ^ ${num2}`;
-                    } else { // Radiciação (raiz quadrada)
-                        resultado = Math.floor(Math.random() * (numMax1 > 10 ? 10 : numMax1)) + 1;
-                        num1 = resultado * resultado;
-                        pergunta = `√${num1}`;
-                    }
+                    
+                } else if (operacao === 'subtracao') {
+                    tipo = 'subtracao';
+                    operador = '-';
+                    num1 = Math.floor(Math.random() * numMax1) + 1;
+                    num2 = Math.floor(Math.random() * numMax2) + 1;
+                    // Garante que o resultado não seja negativo
+                    if (num1 < num2) [num1, num2] = [num2, num1];
+                    resultado = num1 - num2;
+                    pergunta = `${num1} ${operador} ${num2}`;
+                    
+                } else if (operacao === 'multiplicacao') {
+                    tipo = 'multiplicacao';
+                    operador = '×';
+                    // Reduz o máximo para manter a multiplicação gerenciável por nível
+                    numMax1 = nivel === 'facil' ? 5 : (nivel === 'medio' ? 10 : 20);
+                    numMax2 = numMax1; 
+                    num1 = Math.floor(Math.random() * (numMax1 + 1));
+                    num2 = Math.floor(Math.random() * (numMax2 + 1));
+                    resultado = num1 * num2;
+                    pergunta = `${num1} ${operador} ${num2}`;
+                    
+                } else if (operacao === 'divisao') {
+                    tipo = 'divisao';
+                    operador = '÷';
+                    // Usa a multiplicação para garantir uma divisão exata
+                    const divisorMax = nivel === 'facil' ? 5 : (nivel === 'medio' ? 10 : 15);
+                    num2 = Math.floor(Math.random() * divisorMax) + 1;
+                    resultado = Math.floor(Math.random() * divisorMax) + 1;
+                    num1 = resultado * num2; 
+                    pergunta = `${num1} ${operador} ${num2}`;
+                    
+                } else if (operacao === 'potenciacao') {
+                    tipo = 'potenciacao';
+                    const baseMax = nivel === 'facil' ? 4 : (nivel === 'medio' ? 7 : 10);
+                    num1 = Math.floor(Math.random() * baseMax) + 1;
+                    num2 = Math.floor(Math.random() * expoMax) + 2;
+                    resultado = Math.pow(num1, num2);
+                    pergunta = `${num1} ^ ${num2}`;
+                    
+                } else { // Radiciação (operacao === 'radiciacao')
+                    tipo = 'radiciacao';
+                    const baseMax = nivel === 'facil' ? 5 : (nivel === 'medio' ? 10 : 15);
+                    resultado = Math.floor(Math.random() * baseMax) + 1;
+                    num1 = resultado * resultado;
+                    pergunta = `√${num1}`;
                 }
                 
                 const opcoes = new Set();
                 opcoes.add(resultado);
+                
+                // Gera opções falsas com base no resultado e no nível
+                const desvioMax = nivel === 'facil' ? 5 : 10;
                 while (opcoes.size < 4) {
-                    let desvio = Math.floor(Math.random() * 10) + 1;
+                    let desvio = Math.floor(Math.random() * desvioMax) + 1;
                     let sinal = Math.random() < 0.5 ? 1 : -1;
                     let falsa = resultado + (desvio * sinal);
-                    if (falsa < 0 && !isMultiDiv) falsa = Math.abs(resultado - desvio);
+                    
+                    // Garante que as opções de Radiciação e Divisão não sejam negativas
+                    if ((tipo === 'divisao' || tipo === 'radiciacao' || tipo === 'subtracao') && falsa < 0) {
+                        falsa = Math.abs(resultado - desvio);
+                    }
                     if (falsa !== resultado) opcoes.add(falsa);
                 }
                 
@@ -550,7 +654,9 @@ Esta é a **Versão 24.2**, que inclui:
                     if (tipo.includes('divisao')) return "Ronaldo: Use o critério de divisibilidade ou simplifique a fração.";
                     if (tipo.includes('adicao')) return "Rafael: Agrupe os números para simplificar o cálculo mental.";
                     if (tipo.includes('potenciacao')) return "Ronaldo: Potência de potência, multiplique os expoentes. Caso contrário, repita a base!";
-                    return "Ronaldo: Radiciação é a operação inversa da potenciação. Pense: 'Qual número...?'";
+                    if (tipo.includes('radiciacao')) return "Ronaldo: Radiciação é a operação inversa da potenciação. Pense: 'Qual número...?'";
+                    if (tipo.includes('subtracao')) return "Rafael: Use o método de compensação: some o mesmo número a ambos para simplificar a conta!";
+                    return "Ronaldo: Calcule passo a passo. Respire fundo!";
                 }
                 return "Ronaldo: Calcule passo a passo, começando da direita para a esquerda. Respire fundo!";
             }
@@ -562,15 +668,14 @@ Esta é a **Versão 24.2**, que inclui:
         const STATE = {
             xpBase: 50,
             xpAtual: 0,
-            tokens: 0,
+            tokens: 3, // Tokens iniciais para dicas
             combo: 1,
             modo: 'rapido',
-            operacao: 'mult_div',
+            operacao: null, 
             nivel: 'facil',
-            ttsAtivo: false,
-            librasAtivo: false,
+            ttsAtivo: true,
+            librasAtivo: true,
             dislexiaAtiva: false, 
-            // NOVO: Escala de Fonte (de 0.8 a 1.4)
             fontSizeScale: 1.0, 
             historicoErros: [],
             questaoAtual: null,
@@ -579,7 +684,7 @@ Esta é a **Versão 24.2**, que inclui:
             tempoRestante: 10,
             acertosConsecutivos: 0,
             professorModeClicks: 0,
-            temaAtual: 'tema-escuro', // Padrão agora é escuro para o novo design
+            temaAtual: 'tema-escuro', 
         };
         
         const DOM = {
@@ -587,11 +692,11 @@ Esta é a **Versão 24.2**, que inclui:
             telaJogo: document.getElementById('tela-jogo'),
             telaConfig: document.getElementById('tela-config'),
             logo: document.getElementById('app-logo'),
-            selectOperacao: document.getElementById('select-operacao'),
+            botoesOperacao: document.querySelectorAll('.opcoes-container button[data-operacao]'),
+            btnIniciar: document.getElementById('btn-iniciar'),
             selectNivel: document.getElementById('select-nivel'),
             btnModoRapido: document.getElementById('modo-rapido'),
             btnModoNormal: document.getElementById('modo-normal'),
-            btnIniciar: document.getElementById('btn-iniciar'),
             barraTempo: document.getElementById('barra-tempo'),
             contadorCombo: document.getElementById('contador-combo'),
             questaoNumero: document.getElementById('questao-numero'),
@@ -599,17 +704,17 @@ Esta é a **Versão 24.2**, que inclui:
             opcoesResposta: document.getElementById('opcoes-resposta'),
             feedbackMentor: document.getElementById('feedback-mentor'),
             janelaLibras: document.getElementById('janela-libras'),
+            janelaLibrasGlobal: document.getElementById('janela-libras-global'),
             btnAvancar: document.getElementById('btn-avancar'),
             btnDica: document.getElementById('btn-dica'),
+            btnVoltarJogo: document.getElementById('btn-voltar-jogo'),
             toggleTema: document.getElementById('toggle-tema'),
             toggleTts: document.getElementById('toggle-tts'),
             toggleLibras: document.getElementById('toggle-libras'),
             toggleDislexia: document.getElementById('toggle-dislexia'),
-            // NOVOS: Elementos de Zoom
             btnZoomIn: document.getElementById('btn-zoom-in'),
             btnZoomOut: document.getElementById('btn-zoom-out'),
             currentZoom: document.getElementById('current-zoom'),
-
             modoProfessorContainer: document.getElementById('modo-professor-container'),
             btnSairProfessor: document.getElementById('btn-sair-professor'),
             limparHistorico: document.getElementById('limpar-historico'),
@@ -622,24 +727,31 @@ Esta é a **Versão 24.2**, que inclui:
 
         const UI = {
             navegar(telaId) {
-                // Esconde todas as telas
+                clearInterval(STATE.timer); 
+                
                 DOM.telaInicial.style.display = 'none';
                 DOM.telaJogo.style.display = 'none';
                 DOM.telaConfig.style.display = 'none';
                 DOM.modoProfessorContainer.style.display = 'none';
 
-                // Mostra apenas a tela desejada
                 if (telaId === 'inicial') DOM.telaInicial.style.display = 'block';
                 else if (telaId === 'jogo') DOM.telaJogo.style.display = 'block';
                 else if (telaId === 'config') DOM.telaConfig.style.display = 'block';
                 else if (telaId === 'professor') DOM.modoProfessorContainer.style.display = 'block';
+
+                const isJogo = telaId === 'jogo';
+                DOM.janelaLibrasGlobal.style.display = STATE.librasAtivo && !isJogo ? 'block' : 'none';
+                DOM.janelaLibras.style.display = 'none'; 
+                
+                if (telaId === 'inicial' && STATE.librasAtivo) {
+                    DOM.janelaLibrasGlobal.textContent = "[Libras: Bem-vindo(a)]";
+                }
             },
 
             aplicarTema(tema) {
                 STATE.temaAtual = tema;
                 document.body.classList.remove('tema-claro', 'tema-escuro');
                 document.body.classList.add(tema);
-                // O Tema Escuro é o padrão, então o checkbox deve estar DESMARCADO para o tema claro
                 DOM.toggleTema.checked = tema === 'tema-claro'; 
             },
             
@@ -653,9 +765,8 @@ Esta é a **Versão 24.2**, que inclui:
                 DOM.toggleDislexia.checked = ativo;
             },
 
-            // NOVO: Função para aplicar o tamanho da fonte
             aplicarTamanhoFonte(scale) {
-                STATE.fontSizeScale = Math.min(1.4, Math.max(0.8, scale)); // Limita entre 80% e 140%
+                STATE.fontSizeScale = Math.min(1.4, Math.max(0.8, scale));
                 document.documentElement.style.setProperty('--font-scale', STATE.fontSizeScale);
                 
                 const percent = Math.round(STATE.fontSizeScale * 100);
@@ -666,6 +777,7 @@ Esta é a **Versão 24.2**, que inclui:
 
             falar(texto) {
                 if (!STATE.ttsAtivo) return;
+                speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(texto);
                 utterance.lang = 'pt-BR';
                 speechSynthesis.speak(utterance);
@@ -679,8 +791,8 @@ Esta é a **Versão 24.2**, que inclui:
                 const mentor = tipo === 'acerto' ? 'Rafael' : 'Ronaldo';
                 UI.falar(`${mentor} diz: ${texto}`);
 
-                // Controla a visibilidade da janela de Libras
                 DOM.janelaLibras.style.display = STATE.librasAtivo ? 'block' : 'none';
+                DOM.janelaLibrasGlobal.style.display = 'none'; 
                 if(STATE.librasAtivo) {
                     DOM.janelaLibras.textContent = `[Vídeo Libras para: ${tipo === 'acerto' ? 'Acerto' : 'Erro/Dica'}]`;
                 }
@@ -690,6 +802,12 @@ Esta é a **Versão 24.2**, que inclui:
                 const corOriginal = STATE.temaAtual === 'tema-escuro' ? 'var(--cor-fundo-escuro)' : '#F8F9FA';
                 document.body.style.backgroundColor = cor;
                 setTimeout(() => document.body.style.backgroundColor = corOriginal, 500);
+            },
+            
+            atualizarTokens() {
+                // Atualiza o texto do botão DICA para mostrar a contagem de tokens
+                DOM.btnDica.textContent = `FEITIÇO DA REGRA (Tokens: ${STATE.tokens})`;
+                DOM.btnDica.disabled = STATE.tokens <= 0;
             }
         };
 
@@ -708,35 +826,56 @@ Esta é a **Versão 24.2**, que inclui:
                     const loaded = JSON.parse(savedState);
                     Object.assign(STATE, loaded);
                     
-                    // Aplica estados
                     DOM.xpBaseInput.value = STATE.xpBase;
                     DOM.toggleTts.checked = STATE.ttsAtivo;
                     DOM.toggleLibras.checked = STATE.librasAtivo;
                     
-                    // Aplica as configurações salvas de tema, dislexia e fonte
                     UI.aplicarTema(STATE.temaAtual);
                     UI.aplicarDislexia(STATE.dislexiaAtiva);
                     UI.aplicarTamanhoFonte(STATE.fontSizeScale);
                     
                 } else {
-                    // Configuração inicial para o novo design
                     UI.aplicarTema('tema-escuro');
                     UI.aplicarDislexia(false);
                     UI.aplicarTamanhoFonte(1.0);
+                    STATE.ttsAtivo = true;
+                    STATE.librasAtivo = true;
+                    DOM.toggleTts.checked = true;
+                    DOM.toggleLibras.checked = true;
+                    LOGICA.salvarEstado();
                 }
+            },
+            
+            selecionarOperacao(event) {
+                const operacao = event.target.dataset.operacao;
+                
+                DOM.botoesOperacao.forEach(btn => btn.classList.remove('ativo'));
+                event.target.classList.add('ativo');
+
+                STATE.operacao = operacao;
+                DOM.btnIniciar.textContent = `INICIAR: ${operacao.toUpperCase()}!`;
+                DOM.btnIniciar.disabled = false;
+                
+                UI.falar(`Operação ${operacao} selecionada.`);
+                LOGICA.salvarEstado();
             },
 
             iniciarSessao() {
-                STATE.operacao = DOM.selectOperacao.value;
+                if (!STATE.operacao) {
+                    alert("Por favor, selecione uma operação antes de iniciar.");
+                    return;
+                }
+                
                 STATE.nivel = DOM.selectNivel.value;
-                STATE.modo = document.querySelector('.opcoes-container button.ativo').dataset.modo;
+                const modoAtivo = document.querySelector('.opcoes-container button.ativo[data-modo]');
+                STATE.modo = modoAtivo ? modoAtivo.dataset.modo : 'rapido';
+                
                 STATE.xpAtual = 0;
                 STATE.combo = 1;
                 STATE.acertosConsecutivos = 0;
                 STATE.tempoInicial = STATE.modo === 'rapido' ? 10 : 0;
                 LOGICA.proximaQuestao();
                 UI.navegar('jogo');
-                UI.falar(`Iniciando o modo ${STATE.modo === 'rapido' ? 'rápido' : 'normal'}, com ${STATE.operacao} no nível ${STATE.nivel}.`);
             },
 
             proximaQuestao() {
@@ -744,10 +883,8 @@ Esta é a **Versão 24.2**, que inclui:
                 DOM.opcoesResposta.innerHTML = '';
                 
                 let questao;
-                // 50% de chance de repetir um erro passado
                 if (STATE.historicoErros.length > 0 && Math.random() < 0.5) {
                     const erro = STATE.historicoErros[Math.floor(Math.random() * STATE.historicoErros.length)];
-                    // Recria a questão com os mesmos parâmetros do erro
                     questao = CONTEUDO.gerarQuestao(erro.operacao, erro.nivel); 
                 } else {
                     questao = CONTEUDO.gerarQuestao(STATE.operacao, STATE.nivel);
@@ -755,15 +892,16 @@ Esta é a **Versão 24.2**, que inclui:
 
                 STATE.questaoAtual = questao;
                 DOM.questaoTexto.textContent = questao.pergunta;
-                DOM.questaoNumero.textContent = `Questão: ${Math.floor(STATE.xpAtual / STATE.xpBase) + 1}`;
-                DOM.contadorCombo.textContent = `Combo: x${STATE.combo}`;
-                UI.falar(questao.pergunta); // Le a pergunta em voz alta
+                DOM.questaoNumero.textContent = `Questão: ${Math.floor(STATE.xpAtual / STATE.xpBase) + 1} - ${STATE.operacao.toUpperCase()}`;
+                DOM.contadorCombo.textContent = `Tokens: ${STATE.tokens} | Combo: x${STATE.combo}`;
+                UI.falar(questao.pergunta);
                 
                 questao.opcoes.forEach((opcao, index) => {
                     const btn = document.createElement('button');
-                    btn.textContent = opcao;
+                    // Adiciona o número do atalho na frente
+                    btn.textContent = `[${index + 1}] ${opcao}`;
                     btn.dataset.resposta = opcao;
-                    btn.dataset.atalho = index + 1; // Para atalhos de teclado 1, 2, 3, 4
+                    btn.dataset.atalho = index + 1;
                     btn.onclick = LOGICA.checarResposta;
                     DOM.opcoesResposta.appendChild(btn);
                 });
@@ -771,12 +909,11 @@ Esta é a **Versão 24.2**, que inclui:
                 if (STATE.modo === 'rapido') {
                     LOGICA.iniciarTimer();
                     DOM.barraTempo.parentElement.style.display = 'block';
-                    DOM.btnDica.disabled = false;
                 } else {
                     clearInterval(STATE.timer);
                     DOM.barraTempo.parentElement.style.display = 'none';
-                    DOM.btnDica.disabled = false;
                 }
+                UI.atualizarTokens(); // Atualiza o estado do botão dica
             },
 
             iniciarTimer() {
@@ -790,7 +927,7 @@ Esta é a **Versão 24.2**, que inclui:
 
                     if (STATE.tempoRestante <= 0) {
                         clearInterval(STATE.timer);
-                        LOGICA.finalizarQuestao(false, "Tempo esgotado!", null);
+                        LOGICA.finalizarQuestao(false, "Tempo esgotado! Sua magia foi lenta demais.", null);
                     }
                     STATE.tempoRestante -= 0.1;
                 };
@@ -809,6 +946,8 @@ Esta é a **Versão 24.2**, que inclui:
                 Array.from(DOM.opcoesResposta.children).forEach(btn => btn.disabled = true);
                 DOM.btnDica.disabled = true;
 
+                const correta = Array.from(DOM.opcoesResposta.children).find(btn => Number(btn.dataset.resposta) === STATE.questaoAtual.resposta);
+
                 if (acertou) {
                     const tempoGasto = STATE.modo === 'rapido' ? STATE.tempoInicial - STATE.tempoRestante : 1;
                     let xpGanho;
@@ -825,38 +964,45 @@ Esta é a **Versão 24.2**, que inclui:
                     STATE.combo = Math.floor(STATE.acertosConsecutivos / 3) + 1;
                     STATE.tokens += 1;
 
-                    UI.mostrarFeedback(`Uau! +${xpGanho} XP! Seu combo é x${STATE.combo}.`, 'acerto');
+                    UI.mostrarFeedback(`${MENSAGENS.getRandomElogio()} +${xpGanho} XP!`, 'acerto');
                     if (elementoClicado) elementoClicado.classList.add('feedback-acerto');
                     
                 } else {
                     STATE.acertosConsecutivos = 0;
                     STATE.combo = 1;
 
-                    // Adiciona a questão errada ao histórico para repetição
                     STATE.historicoErros.push({
                         pergunta: STATE.questaoAtual.pergunta,
-                        operacao: STATE.questaoAtual.tipo,
-                        nivel: STATE.questaoAtual.nivel
+                        operacao: STATE.operacao,
+                        nivel: STATE.nivel
                     });
 
-                    UI.piscarTela('rgba(231, 76, 60, 0.3)'); // Vermelho mais forte
-                    const correta = Array.from(DOM.opcoesResposta.children).find(btn => Number(btn.dataset.resposta) === STATE.questaoAtual.resposta);
-                    if (correta) {
-                        correta.classList.add('feedback-acerto');
-                        setTimeout(() => correta.classList.remove('feedback-acerto'), 500);
-                    }
+                    UI.piscarTela('rgba(231, 76, 60, 0.3)');
                     
-                    const textoCorreto = `A correta era ${STATE.questaoAtual.resposta}. ${razao}`;
+                    const textoCorreto = `${MENSAGENS.getRandomIncentivo()} A resposta correta era ${STATE.questaoAtual.resposta}.`;
                     UI.mostrarFeedback(textoCorreto, 'erro');
                     
                     if (elementoClicado) elementoClicado.classList.add('feedback-erro');
                 }
-
+                
+                // DESTAQUE DA RESPOSTA CORRETA EM VERDE ESCURO
+                if (correta) {
+                    correta.classList.add('resposta-correta');
+                }
+                
                 LOGICA.salvarEstado();
+                DOM.contadorCombo.textContent = `Tokens: ${STATE.tokens} | Combo: x${STATE.combo}`;
                 DOM.btnAvancar.style.display = 'block';
             },
 
             usarDica() {
+                if (STATE.tokens <= 0) {
+                    UI.mostrarFeedback("Seus Tokens acabaram! Acerte mais questões para recarregar a magia.", 'erro');
+                    return;
+                }
+                
+                STATE.tokens -= 1; // Custa 1 Token
+                
                 if (STATE.modo === 'rapido') {
                     // Adiciona 5 segundos e reinicia o timer
                     STATE.tempoRestante = Math.min(STATE.tempoInicial, STATE.tempoRestante + 5);
@@ -865,18 +1011,20 @@ Esta é a **Versão 24.2**, que inclui:
                 } else {
                     UI.mostrarFeedback(`Feitiço da Regra: ${STATE.questaoAtual.dica}`, 'dica');
                 }
-                DOM.btnDica.disabled = true;
+                
+                UI.atualizarTokens();
+                LOGICA.salvarEstado();
             },
 
             // --- FUNÇÕES MODO PROFESSOR ---
             toggleProfessorMode() {
-                if (STATE.professorModeClicks >= 5) {
+                if (STATE.professorModeClicks >= 4) { // 5 cliques no total (0 a 4)
                     const senha = prompt("Digite a senha de acesso:");
                     if (senha === 'matemagicajfa') {
-                        STATE.xpBase = Number(DOM.xpBaseInput.value);
-                        LOGICA.salvarEstado();
+                        DOM.xpBaseInput.value = STATE.xpBase; 
                         UI.navegar('professor');
                         STATE.professorModeClicks = 0;
+                        UI.falar("Modo Professor Mago ativado.");
                     } else {
                         alert("Senha incorreta. Acesso negado.");
                         STATE.professorModeClicks = 0;
@@ -894,26 +1042,33 @@ Esta é a **Versão 24.2**, que inclui:
             },
 
             limparHistorico() {
-                if (confirm("ATENÇÃO: Isso limpará permanentemente todo o progresso. Continuar?")) {
+                if (confirm("ATENÇÃO: Isso limpará permanentemente todo o progresso (XP, Tokens, Erros). Continuar?")) {
                     localStorage.removeItem('matemagicaState');
-                    Object.assign(STATE, { xpAtual: 0, tokens: 0, historicoErros: [], dislexiaAtiva: false, ttsAtivo: false, librasAtivo: false, fontSizeScale: 1.0, temaAtual: 'tema-escuro' });
+                    // Reset do estado para os valores iniciais
+                    Object.assign(STATE, { 
+                        xpAtual: 0, tokens: 3, historicoErros: [], 
+                        dislexiaAtiva: true, // Mantém as preferências de acessibilidade
+                        librasAtivo: true, ttsAtivo: true, 
+                        fontSizeScale: 1.0, temaAtual: 'tema-escuro' 
+                    });
                     LOGICA.salvarEstado();
-                    alert("Histórico e dados de progresso limpos.");
+                    alert("Histórico e dados de progresso limpos. Recarregando o aplicativo...");
                     location.reload(); 
                 }
             }
         };
 
         // ===============================================
-        // === INICIALIZAÇÃO E EVENT LISTENERS (CORREÇÃO CRÍTICA) ===
+        // === INICIALIZAÇÃO E EVENT LISTENERS ===
         // ===============================================
         document.addEventListener('DOMContentLoaded', () => {
             LOGICA.carregarEstado();
-            
-            // CRÍTICO: Esta linha garante que apenas a tela inicial seja exibida no carregamento.
-            UI.navegar('inicial'); 
+            UI.navegar('inicial');
             
             // --- Eventos de Inicialização ---
+            DOM.botoesOperacao.forEach(btn => {
+                btn.onclick = LOGICA.selecionarOperacao;
+            });
             DOM.btnModoRapido.onclick = (e) => { DOM.btnModoNormal.classList.remove('ativo'); e.target.classList.add('ativo'); LOGICA.salvarEstado(); };
             DOM.btnModoNormal.onclick = (e) => { DOM.btnModoRapido.classList.remove('ativo'); e.target.classList.add('ativo'); LOGICA.salvarEstado(); };
             DOM.btnIniciar.onclick = LOGICA.iniciarSessao;
@@ -924,10 +1079,16 @@ Esta é a **Versão 24.2**, que inclui:
                 LOGICA.salvarEstado(); 
             };
             DOM.toggleTts.onchange = (e) => { STATE.ttsAtivo = e.target.checked; LOGICA.salvarEstado(); };
-            DOM.toggleLibras.onchange = (e) => { STATE.librasAtivo = e.target.checked; LOGICA.salvarEstado(); };
+            DOM.toggleLibras.onchange = (e) => { 
+                STATE.librasAtivo = e.target.checked; 
+                if (DOM.telaInicial.style.display === 'block' || DOM.telaConfig.style.display === 'block') {
+                    DOM.janelaLibrasGlobal.style.display = STATE.librasAtivo ? 'block' : 'none';
+                }
+                LOGICA.salvarEstado(); 
+            };
             DOM.toggleDislexia.onchange = (e) => { UI.aplicarDislexia(e.target.checked); LOGICA.salvarEstado(); };
             
-            // NOVO: Eventos de Zoom
+            // Eventos de Zoom
             DOM.btnZoomIn.onclick = () => UI.aplicarTamanhoFonte(STATE.fontSizeScale + 0.1);
             DOM.btnZoomOut.onclick = () => UI.aplicarTamanhoFonte(STATE.fontSizeScale - 0.1);
             
@@ -935,32 +1096,35 @@ Esta é a **Versão 24.2**, que inclui:
             document.getElementById('btn-voltar-inicial').onclick = () => UI.navegar('inicial');
             
             // --- Eventos de Jogo ---
+            DOM.btnVoltarJogo.onclick = () => UI.navegar('inicial');
             DOM.btnAvancar.onclick = LOGICA.proximaQuestao;
             DOM.btnDica.onclick = LOGICA.usarDica;
             
             // --- Eventos Modo Professor ---
-            DOM.logo.onclick = LOGICA.toggleProfessorMode; // 5 cliques na logo para ativar
+            DOM.logo.onclick = LOGICA.toggleProfessorMode;
             DOM.btnSairProfessor.onclick = LOGICA.sairProfessorMode;
             DOM.limparHistorico.onclick = LOGICA.limparHistorico;
             
             // --- Atalhos de Teclado ---
             document.addEventListener('keydown', (e) => {
-                // Atalhos 1, 2, 3, 4 para respostas rápidas
-                if (DOM.telaJogo.style.display === 'block' && DOM.btnAvancar.style.display === 'none') {
-                    if (e.key >= '1' && e.key <= '4') {
+                if (DOM.telaJogo.style.display === 'block') {
+                    // Atalhos 1, 2, 3, 4 para respostas rápidas
+                    if (DOM.btnAvancar.style.display === 'none' && e.key >= '1' && e.key <= '4') {
                         const btn = document.querySelector(`[data-atalho="${e.key}"]`);
                         if (btn && !btn.disabled) {
                             btn.click();
                             e.preventDefault();
                         }
                     }
-                }
-                // Atalho Enter/Espaço para avançar
-                if ((e.key === 'Enter' || e.key === ' ') && DOM.telaJogo.style.display === 'block' && DOM.btnAvancar.style.display !== 'none') {
-                    DOM.btnAvancar.click();
-                    e.preventDefault();
+                    // Atalho Enter/Espaço para avançar
+                    if ((e.key === 'Enter' || e.key === ' ') && DOM.btnAvancar.style.display !== 'none') {
+                        DOM.btnAvancar.click();
+                        e.preventDefault();
+                    }
                 }
             });
+            
+            UI.atualizarTokens(); // Garante que a contagem inicial de tokens seja exibida no botão dica
         });
     </script>
 </body>

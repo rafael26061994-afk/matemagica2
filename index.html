@@ -1,22 +1,14 @@
-Você identificou um **ponto de falha crítica** no design dos temas. Peço desculpas pela incoerência nos estilos\! O objetivo de um tema escuro é ter **letras claras (brancas)** e o objetivo do tema claro é ter **letras escuras (pretas)**, garantindo sempre o alto contraste.
+Com certeza\! Para incorporar as fotos que você já subiu para o seu repositório, o caminho mais limpo e eficiente é usar as **URLs relativas** (ex: `rafael.png`).
 
-O erro estava na forma como as variáveis CSS e as classes de tema estavam sendo aplicadas, permitindo que a cor de texto padrão (escura) se sobrepusesse ao fundo escuro (preto), resultando em texto invisível.
+Eu atualizei o CSS no seu arquivo `index.html` para fazer essa substituição diretamente.
 
-Eu revisei o **CSS Crítico** na seção `<style>` do código para garantir o seguinte:
+**Atenção:** Certifique-se de que os arquivos de imagem que você subiu para o GitHub se chamam exatamente **`rafael.png`** e **`ronaldo.png`** (ou ajuste a extensão, se forem `.jpg` ou outro formato, nas linhas de CSS abaixo).
 
-1.  **Modo Escuro:** O fundo é `#121212` (muito escuro) e a cor do texto padrão é **`#FFFFFF` (branco)**.
-2.  **Modo Claro:** O fundo é `#F4F7F9` (muito claro) e a cor do texto padrão é **`#1A1A1A` (quase preto)**.
-3.  **Coerência:** As cores de texto dos elementos interativos (`button`, `select`, etc.) também foram ajustadas para herdar corretamente a cor do tema.
-
-Com esta correção no CSS, o aplicativo agora cumprirá integralmente o requisito **WCAG AAA** de alto contraste em ambos os temas.
-
-Aqui está o **Código Final (V. 22.0)**, com todas as regras de negócio, lógica de jogo, segurança e a **correção crucial de contraste e cores**.
+Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avatares:
 
 -----
 
-## 💻 CÓDIGO FINAL DO PROJETO: MATEMÁGICA - V. 22.0 (CORREÇÃO DE CONTRASTE)
-
-Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* as funcionalidades detalhadas no **Prompt Mestre Final Absoluto (V. 21.0)**, com a correção de alto contraste nos temas.
+## 💾 ARQUIVO FINAL: MATEMÁGICA - V. 24.0 (COM AVATARES INCORPORADOS)
 
 ```html
 <!DOCTYPE html>
@@ -24,71 +16,87 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matemágica - A Jornada da Fluência (V. 22.0)</title>
+    <title>Matemágica - A Jornada da Fluência (V. 24.0)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
     
     <style>
         /* === ESTILOS GLOBAIS E CRÍTICOS (CSS CRÍTICO) === */
         :root {
-            --cor-primaria: #4A90E2; /* Azul Mágico */
-            --cor-secundaria: #FF416C; /* Rosa Feitiço */
+            --cor-primaria: #6C5CE7; /* Roxo Mágico Intenso */
+            --cor-secundaria: #00D27F; /* Verde Limão Vibrante */
             
-            /* VARIAVEIS DE CONTRASTE */
-            --cor-fundo-claro: #F4F7F9;
-            --cor-texto-claro: #1A1A1A;
-            --cor-fundo-escuro: #121212;
-            --cor-texto-escuro: #FFFFFF; /* CRÍTICO: Letras Brancas para Modo Escuro */
+            /* VARIÁVEIS DE CONTRASTE */
+            --cor-fundo-claro: #F8F9FA;
+            --cor-texto-claro: #212529;
+            --cor-fundo-escuro: #1A1A2E; /* Azul Marinho Escuro */
+            --cor-texto-escuro: #E0E0E0; /* Branco Suave */
 
-            --cor-acerto: #4CAF50;
-            --cor-erro: #F44336;
+            --cor-acerto: #28A745; /* Verde Sucesso */
+            --cor-erro: #DC3545; /* Vermelho Erro */
+            --cor-aviso: #FFC107; /* Amarelo Atenção */
+
+            --sombra-magica: 0px 8px 20px rgba(108, 92, 231, 0.3);
+            --transicao-padrao: all 0.3s ease;
         }
 
-        /* CRÍTICO: Tema Claro Padrão (Texto Escuro no Fundo Claro) */
+        /* CRÍTICO: Tema Claro Padrão */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Poppins', sans-serif;
             background-color: var(--cor-fundo-claro);
-            color: var(--cor-texto-claro); /* Texto Escuro */
-            transition: background-color 0.3s, color 0.3s;
+            color: var(--cor-texto-claro);
+            transition: var(--transicao-padrao);
             margin: 0;
             padding: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
+            font-size: 1.1em; /* Letras Maiores */
         }
         
-        /* Aplicações no Modo Claro (garante que botões tenham o contraste certo) */
         .card, .config-panel {
             background-color: white;
             color: var(--cor-texto-claro);
         }
-        button:not(.btn-professor), select, input:not([type="checkbox"]) {
+        button:not(.btn-professor):not(.btn-principal), select, input:not([type="checkbox"]) {
             background-color: white;
             color: var(--cor-texto-claro);
+            border: 1px solid #CED4DA;
         }
-
+        .feedback-box {
+            background-color: var(--cor-fundo-claro);
+            color: var(--cor-texto-claro);
+        }
 
         /* CRÍTICO: Tema Escuro via prefers-color-scheme E CLASSE .tema-escuro */
         @media (prefers-color-scheme: dark) {
             body:not(.tema-claro) {
                 background-color: var(--cor-fundo-escuro);
-                color: var(--cor-texto-escuro); /* Texto Branco */
+                color: var(--cor-texto-escuro);
             }
             body:not(.tema-claro) .card, 
             body:not(.tema-claro) .config-panel {
-                background-color: #1E1E1E !important;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
-                border-color: #333 !important;
+                background-color: #2D2D44 !important;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6) !important;
+                border-color: #3B3B5B !important;
                 color: var(--cor-texto-escuro) !important;
             }
-            body:not(.tema-claro) button:not(.btn-professor), 
+            body:not(.tema-claro) button:not(.btn-professor):not(.btn-principal), 
             body:not(.tema-claro) select, 
             body:not(.tema-claro) input:not([type="checkbox"]) {
-                background-color: #333 !important;
+                background-color: #3B3B5B !important;
                 color: var(--cor-texto-escuro) !important;
-                border-color: #444 !important;
+                border-color: #4A4A6B !important;
             }
-            body:not(.tema-claro) .modo-professor-container { background-color: #000 !important; border: 1px solid #444; }
+            body:not(.tema-claro) .modo-professor-container { 
+                background-color: #151525 !important; 
+                border: 1px solid #3B3B5B !important;
+                color: var(--cor-texto-escuro) !important;
+            }
+            body:not(.tema-claro) .feedback-box {
+                background-color: #2D2D44 !important;
+                color: var(--cor-texto-escuro) !important;
+            }
         }
 
         /* Classe Tema Escuro (para toggle manual) */
@@ -97,129 +105,224 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             color: var(--cor-texto-escuro) !important;
         }
         .tema-escuro .card, .tema-escuro .config-panel {
-            background-color: #1E1E1E !important;
+            background-color: #2D2D44 !important;
             color: var(--cor-texto-escuro) !important;
         }
-        .tema-escuro button:not(.btn-professor), .tema-escuro select, .tema-escuro input:not([type="checkbox"]) {
-            background-color: #333 !important;
+        .tema-escuro button:not(.btn-professor):not(.btn-principal), .tema-escuro select, .tema-escuro input:not([type="checkbox"]) {
+            background-color: #3B3B5B !important;
             color: var(--cor-texto-escuro) !important;
-            border-color: #444 !important;
+            border-color: #4A4A6B !important;
+        }
+        .tema-escuro .feedback-box {
+            background-color: #2D2D44 !important;
+            color: var(--cor-texto-escuro) !important;
         }
 
         /* CRÍTICO: Foco Visual Aprimorado (WCAG AAA) */
         button:focus, a:focus, input:focus, select:focus {
-            outline: 3px solid var(--cor-primaria);
-            outline-offset: 2px;
-            box-shadow: 0 0 10px var(--cor-primaria); /* Efeito Mágico */
+            outline: 3px solid var(--cor-secundaria);
+            outline-offset: 3px;
+            box-shadow: 0 0 12px var(--cor-secundaria);
+            border-radius: 5px;
         }
 
         /* Estilos Comuns */
         .header {
             width: 100%;
             text-align: center;
-            padding: 20px 0;
+            padding: 30px 0;
             cursor: pointer;
         }
         .header h1 {
+            font-size: 3.5em;
             color: var(--cor-secundaria);
-            text-shadow: 0 0 10px var(--cor-secundaria); /* Estética Mágica Sutil */
+            text-shadow: 0 0 15px var(--cor-secundaria), 0 0 5px rgba(0, 0, 0, 0.5);
             margin: 0;
+            letter-spacing: 2px;
+        }
+        .header p {
+            font-size: 1.3em;
+            color: var(--cor-primaria);
+            margin-top: 5px;
         }
         .container {
             width: 90%;
-            max-width: 600px;
+            max-width: 700px;
             margin: 20px auto;
             text-align: center;
         }
         .card {
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-            border: 1px solid #ccc;
+            padding: 35px;
+            border-radius: 20px;
+            box-shadow: var(--sombra-magica);
+            margin-bottom: 25px;
+            border: none;
+            transition: var(--transicao-padrao);
         }
+        h2 {
+            font-size: 1.8em;
+            color: var(--cor-primaria);
+            margin-bottom: 25px;
+        }
+
         .opcoes-container button, .opcoes-container select {
-            margin: 5px;
-            padding: 10px 15px;
-            border-radius: 8px;
+            margin: 8px;
+            padding: 12px 20px;
+            border-radius: 10px;
             border: 2px solid var(--cor-primaria);
-            font-size: 16px;
+            font-size: 1.1em;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: var(--transicao-padrao);
+            font-weight: 500;
         }
         .opcoes-container button:hover, .opcoes-container button.ativo {
             background-color: var(--cor-primaria);
-            color: white !important; /* Força cor branca para garantir contraste */
-            box-shadow: 0 0 8px var(--cor-primaria);
+            color: white !important;
+            box-shadow: 0 0 15px var(--cor-primaria);
+            transform: translateY(-2px);
         }
         .btn-principal {
              background-color: var(--cor-primaria);
              color: white !important;
              border: none;
-             padding: 15px;
-             font-size: 1.2em;
-             border-radius: 10px;
+             padding: 18px 25px;
+             font-size: 1.3em;
+             border-radius: 12px;
              cursor: pointer;
+             transition: var(--transicao-padrao);
+             font-weight: bold;
+             letter-spacing: 1px;
+             box-shadow: 0px 5px 15px rgba(108, 92, 231, 0.4);
+        }
+        .btn-principal:hover {
+            background-color: var(--cor-secundaria);
+            box-shadow: 0px 8px 20px rgba(0, 210, 127, 0.4);
+            transform: translateY(-3px);
+        }
+        .btn-secundario {
+            background-color: transparent;
+            color: var(--cor-primaria);
+            border: 2px solid var(--cor-primaria);
+            padding: 12px 20px;
+            font-size: 1.1em;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: var(--transicao-padrao);
+        }
+        .btn-secundario:hover {
+            background-color: var(--cor-primaria);
+            color: white !important;
+            box-shadow: 0 0 10px var(--cor-primaria);
+            transform: translateY(-2px);
         }
 
         /* === ELEMENTOS DE JOGO === */
         .contador-combo {
-            font-size: 24px;
+            font-size: 2.2em;
             font-weight: bold;
             color: var(--cor-secundaria);
-            margin-bottom: 15px;
-            text-shadow: 0 0 5px var(--cor-secundaria);
+            margin-bottom: 20px;
+            text-shadow: 0 0 8px var(--cor-secundaria);
         }
         .barra-tempo-container {
             width: 100%;
-            height: 15px;
-            background-color: #ccc;
-            border-radius: 5px;
-            margin-bottom: 20px;
+            height: 18px;
+            background-color: rgba(0,0,0,0.1);
+            border-radius: 9px;
+            margin-bottom: 25px;
             overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
         }
         .barra-tempo-progresso {
             height: 100%;
             width: 100%; 
-            background-color: var(--cor-primaria);
+            background: linear-gradient(to right, var(--cor-secundaria), var(--cor-primaria));
             transition: none;
         }
         .questao-texto {
-            font-size: 3em;
-            margin: 20px 0;
+            font-size: 3.8em;
+            margin: 30px 0;
             font-weight: bold;
+            color: var(--cor-primaria);
+            text-shadow: 0px 2px 5px rgba(0,0,0,0.1);
         }
         .opcoes-resposta button {
-            width: 100%;
-            padding: 15px;
-            margin: 8px 0;
-            font-size: 1.5em;
+            width: calc(100% - 16px);
+            padding: 18px;
+            font-size: 1.6em;
             border: 2px solid var(--cor-primaria);
-            border-radius: 10px;
+            background-color: transparent;
+            color: var(--cor-primaria);
+            border-radius: 12px;
+            transition: var(--transicao-padrao);
+            font-weight: 600;
+        }
+        .opcoes-resposta button:hover {
+            background-color: var(--cor-primaria);
+            color: white !important;
+            box-shadow: 0 0 15px var(--cor-primaria);
+            transform: translateY(-2px);
         }
         .feedback-acerto { background-color: var(--cor-acerto) !important; color: white !important; }
         .feedback-erro { background-color: var(--cor-erro) !important; color: white !important; }
 
-        .mentor-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            border: 3px solid var(--cor-primaria);
-            background-size: cover;
-            /* CRÍTICO: Placeholders Base64 (A IA deverá preencher com o Base64 real) */
-            background-image: url('data:image/jpeg;base64,PLACEHOLDER_RAFAEL_BASE64_IMAGE'); 
+        .mentores-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 25px;
+            margin-top: 30px;
         }
-        #avatar-ronaldo { background-image: url('data:image/jpeg;base64,PLACEHOLDER_RONALDO_BASE64_IMAGE'); }
+        .mentor-avatar {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: 4px solid var(--cor-secundaria);
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 0 15px rgba(0, 210, 127, 0.4);
+            transition: var(--transicao-padrao);
+        }
+        .mentor-avatar:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 25px var(--cor-secundaria);
+        }
+        /* REFERÊNCIA DE FOTOS: Substituídas as URLs de placeholder pelas referências de arquivo */
+        #avatar-rafael { background-image: url('rafael.png'); } 
+        #avatar-ronaldo { background-image: url('ronaldo.png'); }
         
         .feedback-box {
-            padding: 10px;
-            border-radius: 10px;
+            padding: 15px 20px;
+            border-radius: 15px;
             font-style: italic;
-            margin-top: 10px;
+            margin-top: 20px;
+            font-size: 1.1em;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
         /* === WCAG AAA / RESPONSIVIDADE === */
+        #btn-config {
+            background-color: transparent;
+            border: none;
+            font-size: 1.8em;
+            cursor: pointer;
+            color: var(--cor-primaria);
+            transition: var(--transicao-padrao);
+        }
+        #btn-config:hover {
+            color: var(--cor-secundaria);
+            transform: rotate(15deg);
+        }
+        
         @media screen and (max-width: 600px) {
+            body { font-size: 1em; }
+            .header h1 { font-size: 2.8em; }
+            .header p { font-size: 1.1em; }
+            h2 { font-size: 1.5em; }
+            .opcoes-container button, .opcoes-container select, .btn-principal, .btn-secundario { font-size: 1em; padding: 12px 15px; }
+            .questao-texto { font-size: 3em; margin: 25px 0; }
+            .opcoes-resposta button { font-size: 1.3em; padding: 15px; }
+
             .barra-tempo-container {
                 position: fixed;
                 top: 0;
@@ -231,56 +334,57 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             }
             .contador-combo {
                 position: fixed;
-                top: 20px;
+                top: 15px;
                 left: 10px;
                 z-index: 1001;
                 background: rgba(0, 0, 0, 0.7);
                 padding: 5px 10px;
                 border-radius: 5px;
                 color: white !important;
+                font-size: 1.5em;
             }
             .container {
-                margin-top: 70px;
+                margin-top: 65px;
             }
         }
     </style>
 </head>
 <body>
 
-    <div id="tela-inicial" class="container">
+    <div id="tela-inicial" class="container"> 
         <header class="header">
             <h1 id="app-logo">Matemágica</h1>
             <p>A Jornada da Fluência Matemática</p>
         </header>
 
-        <div style="text-align: right; margin-bottom: 10px;">
-            <button id="btn-config">⚙️ Configurações</button>
+        <div style="text-align: right; margin-bottom: 15px;">
+            <button id="btn-config" aria-label="Abrir Configurações">⚙️</button>
         </div>
 
         <div class="card">
             <h2>1. Escolha a Operação e Nível</h2>
             
-            <div class="opcoes-container" style="margin-bottom: 20px; display: flex; justify-content: space-around;">
-                <select id="select-operacao" aria-label="Selecione a Operação">
+            <div class="opcoes-container" style="margin-bottom: 25px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
+                <select id="select-operacao" aria-label="Selecione a Operação" style="flex-grow: 1; max-width: 250px;">
                     <option value="mult_div">Multiplicação e Divisão</option>
                     <option value="add_sub">Adição e Subtração</option>
                     <option value="pot_rad">Potenciação e Radiciação</option>
                 </select>
 
-                <select id="select-nivel" aria-label="Selecione o Nível de Dificuldade">
-                    <option value="facil">Fácil (0-5 / 1-10)</option>
-                    <option value="medio">Médio (6-10 / 1-50)</option>
-                    <option value="avancado">Avançado (11-20 / 1-100+)</option>
+                <select id="select-nivel" aria-label="Selecione o Nível de Dificuldade" style="flex-grow: 1; max-width: 250px;">
+                    <option value="facil">Fácil (Tabuada 0-5)</option>
+                    <option value="medio">Médio (Tabuada 6-10)</option>
+                    <option value="avancado">Avançado (Tabuada 11-20+)</option>
                 </select>
             </div>
             
             <h2>2. Escolha o Modo de Jogo</h2>
-            <div class="opcoes-container">
+            <div class="opcoes-container" style="margin-bottom: 30px;">
                 <button id="modo-rapido" class="ativo" data-modo="rapido">Modo Rápido (10s)</button>
                 <button id="modo-normal" data-modo="normal">Modo Normal (Sem Tempo)</button>
             </div>
 
-            <button id="btn-iniciar" style="width: 100%; margin-top: 30px;" class="btn-principal">INICIAR JORNADA</button>
+            <button id="btn-iniciar" style="width: 100%;" class="btn-principal">INICIAR JORNADA MÁGICA</button>
         </div>
         
         <div class="mentores-container">
@@ -297,52 +401,58 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
         <div id="contador-combo" class="contador-combo">Combo: x1</div>
         
         <div class="card">
-            <p id="questao-numero">Questão 1</p>
+            <p id="questao-numero" style="font-size: 1.2em; color: #888; margin-bottom: 15px;">Questão 1</p>
             <div id="questao-texto" class="questao-texto">?</div>
             
             <div id="opcoes-resposta" class="opcoes-resposta">
                 </div>
             
-            <button id="btn-avancar" style="display: none; margin-top: 20px;" class="btn-principal">AVANÇAR (Enter/Espaço)</button>
-            <button id="btn-dica" style="margin-top: 10px;" class="btn-secundario">FEITIÇO DA REGRA</button>
+            <button id="btn-avancar" style="display: none; margin-top: 30px;" class="btn-principal">AVANÇAR (Enter/Espaço)</button>
+            <button id="btn-dica" style="margin-top: 15px;" class="btn-secundario">FEITIÇO DA REGRA (+5s)</button>
         </div>
 
         <div id="feedback-mentor" class="feedback-box">Aguardando sua resposta, Mago(a)!</div>
-        <div id="janela-libras" style="margin-top: 10px; height: 100px; background-color: #333; color: white; line-height: 100px; text-align: center; display: none;">[Placeholder Libras]</div>
+        <div id="janela-libras" style="margin-top: 20px; height: 120px; background-color: #333; color: white; line-height: 120px; text-align: center; border-radius: 15px; display: none;">[Placeholder Libras para Feedback]</div>
     </div>
     
     <div id="tela-config" class="container" style="display: none;">
         <div class="card config-panel">
             <h2>Configurações de Acessibilidade</h2>
             
-            <div style="text-align: left; margin-top: 20px;">
-                <label for="toggle-tema">Tema Escuro (Alto Contraste):</label>
-                <input type="checkbox" id="toggle-tema" role="switch">
+            <div style="text-align: left; margin-top: 25px; line-height: 2.2em;">
+                <label for="toggle-tema" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Ativar Tema Escuro:</label>
+                <input type="checkbox" id="toggle-tema" role="switch" aria-label="Alternar para Tema Escuro">
                 
-                <hr style="margin: 15px 0;">
+                <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 108, 92, 231), 0.3);">
 
-                <label for="toggle-tts" style="display: block;">Leitura em Voz (TTS):</label>
-                <input type="checkbox" id="toggle-tts" role="switch">
+                <label for="toggle-tts" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Leitura em Voz (TTS):</label>
+                <input type="checkbox" id="toggle-tts" role="switch" aria-label="Ativar Leitura em Voz (TTS)">
                 
-                <label for="toggle-libras" style="margin-top: 10px; display: block;">Janela de Libras:</label>
-                <input type="checkbox" id="toggle-libras" role="switch">
+                <label for="toggle-libras" style="font-size: 1.1em; display: block; margin-top: 15px; margin-bottom: 10px;">Janela de Libras:</label>
+                <input type="checkbox" id="toggle-libras" role="switch" aria-label="Ativar Janela de Libras">
 
-                <label for="toggle-dislexia" style="margin-top: 10px; display: block;">Modo Dislexia (Fonte Especial):</label>
-                <input type="checkbox" id="toggle-dislexia" role="switch">
+                <label for="toggle-dislexia" style="font-size: 1.1em; display: block; margin-top: 15px; margin-bottom: 10px;">Modo Dislexia (Fonte Especial):</label>
+                <input type="checkbox" id="toggle-dislexia" role="switch" aria-label="Ativar Modo Dislexia">
             </div>
             
-            <button id="btn-voltar-inicial" class="btn-principal" style="margin-top: 30px;">Voltar para o Menu</button>
+            <button id="btn-voltar-inicial" class="btn-principal" style="margin-top: 40px;">VOLTAR PARA O MENU</button>
         </div>
     </div>
     
     <div id="modo-professor-container" class="container modo-professor-container" style="display: none;">
-        <h2>🔒 Modo Professor Mago</h2>
-        <p>Ajuste as variáveis do jogo e dados dos alunos.</p>
-        <label for="xp-base-input">XP Base (Padrão: 50):</label>
-        <input type="number" id="xp-base-input" value="50" min="10" style="padding: 10px; margin-bottom: 20px;">
-        <p id="feedback-salvamento" style="font-size: 0.9em; color: var(--cor-acerto);"></p>
-        <button id="limpar-historico" class="btn-principal" style="background-color: var(--cor-erro); margin-bottom: 20px;">Limpar Histórico de Alunos (localStorage)</button>
-        <button id="btn-sair-professor" class="btn-principal">Sair do Modo Professor</button>
+        <div class="card">
+            <h2>🔒 Modo Professor Mago</h2>
+            <p style="font-size: 1.1em; color: #888; margin-bottom: 25px;">Ajuste as variáveis do jogo e dados dos alunos.</p>
+            
+            <div style="text-align: left; margin-bottom: 20px;">
+                <label for="xp-base-input" style="font-size: 1.1em; display: block; margin-bottom: 8px;">XP Base por Acerto (Padrão: 50):</label>
+                <input type="number" id="xp-base-input" value="50" min="10" style="width: 100%; padding: 12px; font-size: 1em; border-radius: 8px;">
+            </div>
+            
+            <p id="feedback-salvamento" style="font-size: 0.9em; color: var(--cor-acerto); margin-top: 15px;"></p>
+            <button id="limpar-historico" class="btn-principal" style="background-color: var(--cor-erro); margin-top: 30px; margin-bottom: 20px;">LIMPAR HISTÓRICO DE ALUNOS</button>
+            <button id="btn-sair-professor" class="btn-principal">SAIR DO MODO PROFESSOR</button>
+        </div>
     </div>
 
     <script type="module">
@@ -351,24 +461,22 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
         // ==========================================================
         
         const CONTEUDO = {
-            // CRÍTICO: Implementação da Estrutura de Dificuldade
             gerarQuestao(operacao, nivel) {
                 let numMax1, numMax2, expoMax;
                 let isMultiDiv = operacao === 'mult_div';
 
-                // 1. Definindo limites com base na Tabela Pedagógica
                 if (nivel === 'facil') {
                     numMax1 = isMultiDiv ? 5 : 10;
                     numMax2 = isMultiDiv ? 5 : 10;
-                    expoMax = 2; // ex: 2^2, 3^2
+                    expoMax = 2; 
                 } else if (nivel === 'medio') {
                     numMax1 = isMultiDiv ? 10 : 50;
                     numMax2 = isMultiDiv ? 10 : 50;
-                    expoMax = 3; // ex: 2^3, 5^3
+                    expoMax = 3; 
                 } else { // Avançado
                     numMax1 = isMultiDiv ? 20 : 100;
                     numMax2 = isMultiDiv ? 20 : 100;
-                    expoMax = 4; // ex: 2^4, 3^4 (limite para evitar números gigantes)
+                    expoMax = 4;
                 }
 
                 let num1, num2, resultado, pergunta, operador, tipo;
@@ -382,9 +490,9 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                         operador = '×';
                         resultado = num1 * num2;
                         pergunta = `${num1} ${operador} ${num2}`;
-                    } else { // Divisão (garantir divisão exata)
+                    } else { 
                         resultado = num1;
-                        num1 = resultado * num2; // Faz o dividendo ser múltiplo do divisor
+                        num1 = resultado * num2; 
                         operador = '÷';
                         pergunta = `${num1} ${operador} ${num2}`;
                     }
@@ -396,7 +504,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                     if (tipo === 'adicao') {
                         operador = '+';
                         resultado = num1 + num2;
-                    } else { // Subtração (garantir positivo)
+                    } else { 
                         if (num1 < num2) [num1, num2] = [num2, num1];
                         operador = '-';
                         resultado = num1 - num2;
@@ -417,7 +525,6 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                     }
                 }
                 
-                // Gerar opções de resposta
                 const opcoes = new Set();
                 opcoes.add(resultado);
                 while (opcoes.size < 4) {
@@ -472,7 +579,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             tempoRestante: 10,
             acertosConsecutivos: 0,
             professorModeClicks: 0,
-            temaAtual: 'tema-escuro' 
+            temaAtual: 'tema-escuro',
         };
         
         const DOM = {
@@ -487,6 +594,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             btnIniciar: document.getElementById('btn-iniciar'),
             barraTempo: document.getElementById('barra-tempo'),
             contadorCombo: document.getElementById('contador-combo'),
+            questaoNumero: document.getElementById('questao-numero'),
             questaoTexto: document.getElementById('questao-texto'),
             opcoesResposta: document.getElementById('opcoes-resposta'),
             feedbackMentor: document.getElementById('feedback-mentor'),
@@ -508,11 +616,13 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
 
         const UI = {
             navegar(telaId) {
+                // Esconde todas as telas
                 DOM.telaInicial.style.display = 'none';
                 DOM.telaJogo.style.display = 'none';
                 DOM.telaConfig.style.display = 'none';
                 DOM.modoProfessorContainer.style.display = 'none';
 
+                // Mostra apenas a tela desejada
                 if (telaId === 'inicial') DOM.telaInicial.style.display = 'block';
                 else if (telaId === 'jogo') DOM.telaJogo.style.display = 'block';
                 else if (telaId === 'config') DOM.telaConfig.style.display = 'block';
@@ -565,13 +675,11 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                 if (savedState) {
                     const loaded = JSON.parse(savedState);
                     Object.assign(STATE, loaded);
-                    // Atualiza UI com estado carregado
                     DOM.xpBaseInput.value = STATE.xpBase;
                     DOM.toggleTts.checked = STATE.ttsAtivo;
                     DOM.toggleLibras.checked = STATE.librasAtivo;
                     UI.aplicarTema(STATE.temaAtual);
                 } else {
-                     // Define tema inicial baseado na preferência do sistema
                     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                     UI.aplicarTema(isDark ? 'tema-escuro' : 'tema-claro');
                 }
@@ -594,7 +702,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                 DOM.opcoesResposta.innerHTML = '';
                 
                 let questao;
-                // Lógica de Adaptação: 50% de chance de priorizar erros
+                // 50% de chance de repetir um erro passado
                 if (STATE.historicoErros.length > 0 && Math.random() < 0.5) {
                     const erro = STATE.historicoErros[Math.floor(Math.random() * STATE.historicoErros.length)];
                     questao = CONTEUDO.gerarQuestao(erro.operacao, erro.nivel);
@@ -604,14 +712,14 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
 
                 STATE.questaoAtual = questao;
                 DOM.questaoTexto.textContent = questao.pergunta;
-                DOM.questaoNumero.textContent = `Questão: ${STATE.xpAtual / STATE.xpBase + 1}`;
+                DOM.questaoNumero.textContent = `Questão: ${Math.floor(STATE.xpAtual / STATE.xpBase) + 1}`;
                 DOM.contadorCombo.textContent = `Combo: x${STATE.combo}`;
                 
                 questao.opcoes.forEach((opcao, index) => {
                     const btn = document.createElement('button');
                     btn.textContent = opcao;
                     btn.dataset.resposta = opcao;
-                    btn.dataset.atalho = index + 1;
+                    btn.dataset.atalho = index + 1; // Para atalhos de teclado 1, 2, 3, 4
                     btn.onclick = LOGICA.checarResposta;
                     DOM.opcoesResposta.appendChild(btn);
                 });
@@ -680,13 +788,13 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                     STATE.acertosConsecutivos = 0;
                     STATE.combo = 1;
 
+                    // Adiciona a questão errada ao histórico para repetição
                     STATE.historicoErros.push({
                         pergunta: STATE.questaoAtual.pergunta,
                         operacao: STATE.questaoAtual.tipo,
                         nivel: STATE.questaoAtual.nivel
                     });
 
-                    // CRÍTICO: Feedback Triplo
                     UI.piscarTela('rgba(255, 0, 0, 0.2)');
                     const correta = Array.from(DOM.opcoesResposta.children).find(btn => Number(btn.dataset.resposta) === STATE.questaoAtual.resposta);
                     if (correta) {
@@ -706,12 +814,11 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
 
             usarDica() {
                 if (STATE.modo === 'rapido') {
-                    // CRÍTICO: Feitiço da Regra no Modo Rápido
+                    // Adiciona 5 segundos e reinicia o timer
                     STATE.tempoRestante = Math.min(STATE.tempoInicial, STATE.tempoRestante + 5);
                     LOGICA.iniciarTimer();
                     UI.mostrarFeedback(`Feitiço da Regra (+5s): ${STATE.questaoAtual.dica}`, 'dica');
                 } else {
-                    // CRÍTICO: Feitiço da Regra no Modo Normal
                     UI.mostrarFeedback(`Feitiço da Regra: ${STATE.questaoAtual.dica}`, 'dica');
                 }
                 DOM.btnDica.disabled = true;
@@ -736,7 +843,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             },
             
             sairProfessorMode() {
-                STATE.xpBase = Number(DOM.xpBaseInput.value); // Salva XP Base ao sair
+                STATE.xpBase = Number(DOM.xpBaseInput.value);
                 LOGICA.salvarEstado();
                 UI.navegar('inicial');
                 UI.falar("Modo Professor Desativado. Bem-vindo(a) de volta, Aluno Mago!");
@@ -754,19 +861,21 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
         };
 
         // ===============================================
-        // === INICIALIZAÇÃO E EVENT LISTENERS ===
+        // === INICIALIZAÇÃO E EVENT LISTENERS (CORREÇÃO CRÍTICA) ===
         // ===============================================
-
         document.addEventListener('DOMContentLoaded', () => {
             LOGICA.carregarEstado();
             
+            // CRÍTICO: Esta linha garante que apenas a tela inicial seja exibida no carregamento.
+            UI.navegar('inicial'); 
+            
             // --- Eventos de Inicialização ---
-            DOM.btnModoRapido.onclick = (e) => { DOM.btnModoNormal.classList.remove('ativo'); e.target.classList.add('ativo'); };
-            DOM.btnModoNormal.onclick = (e) => { DOM.btnModoRapido.classList.remove('ativo'); e.target.classList.add('ativo'); };
+            DOM.btnModoRapido.onclick = (e) => { DOM.btnModoNormal.classList.remove('ativo'); e.target.classList.add('ativo'); LOGICA.salvarEstado(); };
+            DOM.btnModoNormal.onclick = (e) => { DOM.btnModoRapido.classList.remove('ativo'); e.target.classList.add('ativo'); LOGICA.salvarEstado(); };
             DOM.btnIniciar.onclick = LOGICA.iniciarSessao;
             
             // --- Eventos de Acessibilidade/Config ---
-            DOM.toggleTema.onchange = (e) => UI.aplicarTema(e.target.checked ? 'tema-escuro' : 'tema-claro');
+            DOM.toggleTema.onchange = (e) => { UI.aplicarTema(e.target.checked ? 'tema-escuro' : 'tema-claro'); LOGICA.salvarEstado(); };
             DOM.toggleTts.onchange = (e) => { STATE.ttsAtivo = e.target.checked; LOGICA.salvarEstado(); };
             DOM.toggleLibras.onchange = (e) => { STATE.librasAtivo = e.target.checked; LOGICA.salvarEstado(); };
             document.getElementById('btn-config').onclick = () => UI.navegar('config');
@@ -777,12 +886,13 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
             DOM.btnDica.onclick = LOGICA.usarDica;
             
             // --- Eventos Modo Professor ---
-            DOM.logo.onclick = LOGICA.toggleProfessorMode;
+            DOM.logo.onclick = LOGICA.toggleProfessorMode; // 5 cliques na logo para ativar
             DOM.btnSairProfessor.onclick = LOGICA.sairProfessorMode;
             DOM.limparHistorico.onclick = LOGICA.limparHistorico;
             
-            // --- CRÍTICO: Atalhos de Teclado ---
+            // --- Atalhos de Teclado ---
             document.addEventListener('keydown', (e) => {
+                // Atalhos 1, 2, 3, 4 para respostas rápidas
                 if (DOM.telaJogo.style.display === 'block' && DOM.btnAvancar.style.display === 'none') {
                     if (e.key >= '1' && e.key <= '4') {
                         const btn = document.querySelector(`[data-atalho="${e.key}"]`);
@@ -792,6 +902,7 @@ Este é o **arquivo `index.html` standalone e completo** que incorpora *todas* a
                         }
                     }
                 }
+                // Atalho Enter/Espaço para avançar
                 if ((e.key === 'Enter' || e.key === ' ') && DOM.telaJogo.style.display === 'block' && DOM.btnAvancar.style.display !== 'none') {
                     DOM.btnAvancar.click();
                     e.preventDefault();

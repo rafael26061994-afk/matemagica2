@@ -1,14 +1,16 @@
-Com certeza\! Para incorporar as fotos que você já subiu para o seu repositório, o caminho mais limpo e eficiente é usar as **URLs relativas** (ex: `rafael.png`).
+Com certeza\! Adicionar o controle de tamanho de fonte é um excelente recurso de acessibilidade. Além disso, fiz um grande *upgrade* no CSS para que o design se aproxime da estética "gamer/futurista" do link de referência.
 
-Eu atualizei o CSS no seu arquivo `index.html` para fazer essa substituição diretamente.
+Esta é a **Versão 24.2**, que inclui:
 
-**Atenção:** Certifique-se de que os arquivos de imagem que você subiu para o GitHub se chamam exatamente **`rafael.png`** e **`ronaldo.png`** (ou ajuste a extensão, se forem `.jpg` ou outro formato, nas linhas de CSS abaixo).
+1.  **Controle de Tamanho da Fonte (Zoom)** na tela de Configurações.
+2.  **Novo Design (CSS)** com tema escuro padrão e efeitos de brilho/sombra mais intensos, similar ao que você pediu.
+3.  Todas as correções de acessibilidade anteriores (Libras, TTS, Dislexia).
 
-Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avatares:
+**Atenção:** Como antes, substitua **TODO** o conteúdo do seu arquivo `index.html` pelo código abaixo.
 
 -----
 
-## 💾 ARQUIVO FINAL: MATEMÁGICA - V. 24.0 (COM AVATARES INCORPORADOS)
+## 💾 ARQUIVO FINAL: MATEMÁGICA - V. 24.2 (DESIGN MELHORADO + ZOOM)
 
 ```html
 <!DOCTYPE html>
@@ -16,34 +18,40 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matemágica - A Jornada da Fluência (V. 24.0)</title>
+    <title>Matemágica - A Jornada da Fluência (V. 24.2)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Open+Dyslexic:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
         /* === ESTILOS GLOBAIS E CRÍTICOS (CSS CRÍTICO) === */
         :root {
-            --cor-primaria: #6C5CE7; /* Roxo Mágico Intenso */
-            --cor-secundaria: #00D27F; /* Verde Limão Vibrante */
+            --cor-primaria: #9B59B6; /* Roxo Místico */
+            --cor-secundaria: #3498DB; /* Azul Elétrico */
+            --cor-acento: #E91E63; /* Pink Neon */
             
             /* VARIÁVEIS DE CONTRASTE */
-            --cor-fundo-claro: #F8F9FA;
-            --cor-texto-claro: #212529;
-            --cor-fundo-escuro: #1A1A2E; /* Azul Marinho Escuro */
-            --cor-texto-escuro: #E0E0E0; /* Branco Suave */
+            --cor-fundo-escuro: #12121D; /* Fundo Ultra Escuro */
+            --cor-texto-escuro: #ECF0F1; /* Branco Suave */
+            --cor-fundo-card: #1A1A2E; /* Azul Marinho Escuro para Cartas */
+            
+            --cor-acerto: #2ECC71; /* Verde Sucesso */
+            --cor-erro: #E74C3C; /* Vermelho Erro */
+            --cor-aviso: #F39C12; /* Amarelo Atenção */
 
-            --cor-acerto: #28A745; /* Verde Sucesso */
-            --cor-erro: #DC3545; /* Vermelho Erro */
-            --cor-aviso: #FFC107; /* Amarelo Atenção */
-
-            --sombra-magica: 0px 8px 20px rgba(108, 92, 231, 0.3);
+            --sombra-magica: 0px 0px 25px rgba(155, 89, 182, 0.5); /* Sombra Roxo Místico */
+            --brilho-secundario: 0px 0px 15px rgba(52, 152, 219, 0.8); /* Brilho Azul Elétrico */
             --transicao-padrao: all 0.3s ease;
+
+            /* NOVO: Variável de Escala de Fonte (Início: 1.0) */
+            --font-scale: 1.0; 
         }
 
-        /* CRÍTICO: Tema Claro Padrão */
+        /* CONFIGURAÇÃO DE TEMA ESCURO PADRÃO E ESCALA DE FONTE */
         body {
             font-family: 'Poppins', sans-serif;
-            background-color: var(--cor-fundo-claro);
-            color: var(--cor-texto-claro);
+            background-color: var(--cor-fundo-escuro);
+            color: var(--cor-texto-escuro);
             transition: var(--transicao-padrao);
             margin: 0;
             padding: 0;
@@ -51,78 +59,48 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
-            font-size: 1.1em; /* Letras Maiores */
+            
+            /* APLICAÇÃO DA ESCALA DE FONTE */
+            font-size: calc(1.1em * var(--font-scale)); 
         }
         
+        /* ESTILO PARA DISLEXIA */
+        .modo-dislexia {
+            font-family: 'Open Dyslexic', cursive !important;
+            line-height: 1.8; 
+            letter-spacing: 1px; 
+        }
+
+        /* ESTILOS DE COR (Priorizando o tema escuro) */
         .card, .config-panel {
-            background-color: white;
-            color: var(--cor-texto-claro);
-        }
-        button:not(.btn-professor):not(.btn-principal), select, input:not([type="checkbox"]) {
-            background-color: white;
-            color: var(--cor-texto-claro);
-            border: 1px solid #CED4DA;
-        }
-        .feedback-box {
-            background-color: var(--cor-fundo-claro);
-            color: var(--cor-texto-claro);
-        }
-
-        /* CRÍTICO: Tema Escuro via prefers-color-scheme E CLASSE .tema-escuro */
-        @media (prefers-color-scheme: dark) {
-            body:not(.tema-claro) {
-                background-color: var(--cor-fundo-escuro);
-                color: var(--cor-texto-escuro);
-            }
-            body:not(.tema-claro) .card, 
-            body:not(.tema-claro) .config-panel {
-                background-color: #2D2D44 !important;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6) !important;
-                border-color: #3B3B5B !important;
-                color: var(--cor-texto-escuro) !important;
-            }
-            body:not(.tema-claro) button:not(.btn-professor):not(.btn-principal), 
-            body:not(.tema-claro) select, 
-            body:not(.tema-claro) input:not([type="checkbox"]) {
-                background-color: #3B3B5B !important;
-                color: var(--cor-texto-escuro) !important;
-                border-color: #4A4A6B !important;
-            }
-            body:not(.tema-claro) .modo-professor-container { 
-                background-color: #151525 !important; 
-                border: 1px solid #3B3B5B !important;
-                color: var(--cor-texto-escuro) !important;
-            }
-            body:not(.tema-claro) .feedback-box {
-                background-color: #2D2D44 !important;
-                color: var(--cor-texto-escuro) !important;
-            }
-        }
-
-        /* Classe Tema Escuro (para toggle manual) */
-        .tema-escuro {
-            background-color: var(--cor-fundo-escuro) !important;
+            background-color: var(--cor-fundo-card) !important;
             color: var(--cor-texto-escuro) !important;
+            box-shadow: var(--sombra-magica) !important;
+            border: 1px solid var(--cor-primaria);
         }
-        .tema-escuro .card, .tema-escuro .config-panel {
-            background-color: #2D2D44 !important;
-            color: var(--cor-texto-escuro) !important;
+        button:not(.btn-principal):not(.btn-secundario), select, input:not([type="checkbox"]) {
+            background-color: #2C3E50; /* Azul Escuro */
+            color: var(--cor-texto-escuro);
+            border: 1px solid var(--cor-secundaria);
         }
-        .tema-escuro button:not(.btn-professor):not(.btn-principal), .tema-escuro select, .tema-escuro input:not([type="checkbox"]) {
-            background-color: #3B3B5B !important;
-            color: var(--cor-texto-escuro) !important;
-            border-color: #4A4A6B !important;
+        
+        /* Ajuste para o tema claro (apenas se for forçado) */
+        .tema-claro {
+            background-color: #F8F9FA !important;
+            color: #212529 !important;
         }
-        .tema-escuro .feedback-box {
-            background-color: #2D2D44 !important;
-            color: var(--cor-texto-escuro) !important;
+        .tema-claro .card, .tema-claro .config-panel {
+            background-color: white !important;
+            color: #212529 !important;
+            box-shadow: 0px 8px 20px rgba(108, 92, 231, 0.3) !important;
+            border: none;
         }
 
         /* CRÍTICO: Foco Visual Aprimorado (WCAG AAA) */
         button:focus, a:focus, input:focus, select:focus {
-            outline: 3px solid var(--cor-secundaria);
+            outline: 3px solid var(--cor-acento);
             outline-offset: 3px;
-            box-shadow: 0 0 12px var(--cor-secundaria);
+            box-shadow: 0 0 15px var(--cor-acento);
             border-radius: 5px;
         }
 
@@ -130,47 +108,44 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
         .header {
             width: 100%;
             text-align: center;
-            padding: 30px 0;
+            padding: calc(30px * var(--font-scale)) 0;
             cursor: pointer;
         }
         .header h1 {
-            font-size: 3.5em;
-            color: var(--cor-secundaria);
-            text-shadow: 0 0 15px var(--cor-secundaria), 0 0 5px rgba(0, 0, 0, 0.5);
+            font-size: calc(3.5em * var(--font-scale));
+            color: var(--cor-acento);
+            text-shadow: 0 0 20px var(--cor-acento), 0 0 5px rgba(255, 255, 255, 0.5);
             margin: 0;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
         }
         .header p {
-            font-size: 1.3em;
-            color: var(--cor-primaria);
+            font-size: calc(1.3em * var(--font-scale));
+            color: var(--cor-secundaria);
             margin-top: 5px;
         }
         .container {
             width: 90%;
             max-width: 700px;
-            margin: 20px auto;
+            margin: calc(20px * var(--font-scale)) auto;
             text-align: center;
         }
         .card {
-            padding: 35px;
+            padding: calc(35px * var(--font-scale));
             border-radius: 20px;
-            box-shadow: var(--sombra-magica);
-            margin-bottom: 25px;
-            border: none;
+            margin-bottom: calc(25px * var(--font-scale));
             transition: var(--transicao-padrao);
         }
         h2 {
-            font-size: 1.8em;
+            font-size: calc(1.8em * var(--font-scale));
             color: var(--cor-primaria);
-            margin-bottom: 25px;
+            margin-bottom: calc(25px * var(--font-scale));
         }
 
         .opcoes-container button, .opcoes-container select {
-            margin: 8px;
-            padding: 12px 20px;
+            margin: calc(8px * var(--font-scale));
+            padding: calc(12px * var(--font-scale)) calc(20px * var(--font-scale));
             border-radius: 10px;
-            border: 2px solid var(--cor-primaria);
-            font-size: 1.1em;
+            font-size: calc(1.1em * var(--font-scale));
             cursor: pointer;
             transition: var(--transicao-padrao);
             font-weight: 500;
@@ -182,74 +157,74 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             transform: translateY(-2px);
         }
         .btn-principal {
-             background-color: var(--cor-primaria);
+             background-color: var(--cor-acento);
              color: white !important;
              border: none;
-             padding: 18px 25px;
-             font-size: 1.3em;
+             padding: calc(18px * var(--font-scale)) calc(25px * var(--font-scale));
+             font-size: calc(1.3em * var(--font-scale));
              border-radius: 12px;
              cursor: pointer;
              transition: var(--transicao-padrao);
              font-weight: bold;
              letter-spacing: 1px;
-             box-shadow: 0px 5px 15px rgba(108, 92, 231, 0.4);
+             box-shadow: 0px 5px 20px rgba(233, 30, 99, 0.6);
         }
         .btn-principal:hover {
             background-color: var(--cor-secundaria);
-            box-shadow: 0px 8px 20px rgba(0, 210, 127, 0.4);
+            box-shadow: 0px 8px 25px rgba(52, 152, 219, 0.8);
             transform: translateY(-3px);
         }
         .btn-secundario {
             background-color: transparent;
-            color: var(--cor-primaria);
-            border: 2px solid var(--cor-primaria);
-            padding: 12px 20px;
-            font-size: 1.1em;
+            color: var(--cor-secundaria);
+            border: 2px solid var(--cor-secundaria);
+            padding: calc(12px * var(--font-scale)) calc(20px * var(--font-scale));
+            font-size: calc(1.1em * var(--font-scale));
             border-radius: 10px;
             cursor: pointer;
             transition: var(--transicao-padrao);
         }
         .btn-secundario:hover {
-            background-color: var(--cor-primaria);
-            color: white !important;
-            box-shadow: 0 0 10px var(--cor-primaria);
+            background-color: var(--cor-secundaria);
+            color: var(--cor-texto-escuro) !important;
+            box-shadow: var(--brilho-secundario);
             transform: translateY(-2px);
         }
 
         /* === ELEMENTOS DE JOGO === */
         .contador-combo {
-            font-size: 2.2em;
+            font-size: calc(2.2em * var(--font-scale));
             font-weight: bold;
-            color: var(--cor-secundaria);
-            margin-bottom: 20px;
-            text-shadow: 0 0 8px var(--cor-secundaria);
+            color: var(--cor-acerto);
+            margin-bottom: calc(20px * var(--font-scale));
+            text-shadow: 0 0 10px var(--cor-acerto);
         }
         .barra-tempo-container {
             width: 100%;
-            height: 18px;
-            background-color: rgba(0,0,0,0.1);
+            height: calc(18px * var(--font-scale));
+            background-color: rgba(255,255,255,0.1);
             border-radius: 9px;
-            margin-bottom: 25px;
+            margin-bottom: calc(25px * var(--font-scale));
             overflow: hidden;
             box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
         }
         .barra-tempo-progresso {
             height: 100%;
             width: 100%; 
-            background: linear-gradient(to right, var(--cor-secundaria), var(--cor-primaria));
+            background: linear-gradient(to right, var(--cor-acerto), var(--cor-acento));
             transition: none;
         }
         .questao-texto {
-            font-size: 3.8em;
-            margin: 30px 0;
+            font-size: calc(3.8em * var(--font-scale));
+            margin: calc(30px * var(--font-scale)) 0;
             font-weight: bold;
-            color: var(--cor-primaria);
-            text-shadow: 0px 2px 5px rgba(0,0,0,0.1);
+            color: var(--cor-secundaria);
+            text-shadow: 0px 0px 10px rgba(52, 152, 219, 0.5);
         }
         .opcoes-resposta button {
             width: calc(100% - 16px);
-            padding: 18px;
-            font-size: 1.6em;
+            padding: calc(18px * var(--font-scale));
+            font-size: calc(1.6em * var(--font-scale));
             border: 2px solid var(--cor-primaria);
             background-color: transparent;
             color: var(--cor-primaria);
@@ -259,69 +234,80 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
         }
         .opcoes-resposta button:hover {
             background-color: var(--cor-primaria);
-            color: white !important;
+            color: var(--cor-texto-escuro) !important;
             box-shadow: 0 0 15px var(--cor-primaria);
             transform: translateY(-2px);
         }
-        .feedback-acerto { background-color: var(--cor-acerto) !important; color: white !important; }
-        .feedback-erro { background-color: var(--cor-erro) !important; color: white !important; }
+        .feedback-acerto { 
+            background-color: var(--cor-acerto) !important; 
+            color: var(--cor-texto-escuro) !important; 
+            box-shadow: 0 0 15px var(--cor-acerto) !important;
+        }
+        .feedback-erro { 
+            background-color: var(--cor-erro) !important; 
+            color: var(--cor-texto-escuro) !important;
+            box-shadow: 0 0 15px var(--cor-erro) !important;
+        }
 
         .mentores-container {
             display: flex;
             justify-content: center;
             align-items: flex-end;
-            gap: 25px;
-            margin-top: 30px;
+            gap: calc(25px * var(--font-scale));
+            margin-top: calc(30px * var(--font-scale));
         }
         .mentor-avatar {
-            width: 70px;
-            height: 70px;
+            width: calc(70px * var(--font-scale));
+            height: calc(70px * var(--font-scale));
             border-radius: 50%;
-            border: 4px solid var(--cor-secundaria);
+            border: 4px solid var(--cor-acento);
             background-size: cover;
             background-position: center;
-            box-shadow: 0 0 15px rgba(0, 210, 127, 0.4);
+            box-shadow: 0 0 15px rgba(233, 30, 99, 0.5);
             transition: var(--transicao-padrao);
         }
         .mentor-avatar:hover {
             transform: scale(1.1);
-            box-shadow: 0 0 25px var(--cor-secundaria);
+            box-shadow: 0 0 25px var(--cor-acento);
         }
-        /* REFERÊNCIA DE FOTOS: Substituídas as URLs de placeholder pelas referências de arquivo */
+        /* AVATARES: Usando URLs relativas para os arquivos rafael.png e ronaldo.png */
         #avatar-rafael { background-image: url('rafael.png'); } 
         #avatar-ronaldo { background-image: url('ronaldo.png'); }
         
         .feedback-box {
-            padding: 15px 20px;
+            background-color: #2C3E50;
+            color: var(--cor-texto-escuro);
+            padding: calc(15px * var(--font-scale)) calc(20px * var(--font-scale));
             border-radius: 15px;
             font-style: italic;
-            margin-top: 20px;
-            font-size: 1.1em;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: calc(20px * var(--font-scale));
+            font-size: calc(1.1em * var(--font-scale));
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
         }
         
         /* === WCAG AAA / RESPONSIVIDADE === */
         #btn-config {
             background-color: transparent;
             border: none;
-            font-size: 1.8em;
+            font-size: calc(1.8em * var(--font-scale));
             cursor: pointer;
             color: var(--cor-primaria);
             transition: var(--transicao-padrao);
+            text-shadow: var(--sombra-magica);
         }
         #btn-config:hover {
-            color: var(--cor-secundaria);
+            color: var(--cor-acento);
             transform: rotate(15deg);
         }
         
         @media screen and (max-width: 600px) {
-            body { font-size: 1em; }
-            .header h1 { font-size: 2.8em; }
-            .header p { font-size: 1.1em; }
-            h2 { font-size: 1.5em; }
-            .opcoes-container button, .opcoes-container select, .btn-principal, .btn-secundario { font-size: 1em; padding: 12px 15px; }
-            .questao-texto { font-size: 3em; margin: 25px 0; }
-            .opcoes-resposta button { font-size: 1.3em; padding: 15px; }
+            body { font-size: calc(1em * var(--font-scale)); }
+            .header h1 { font-size: calc(2.8em * var(--font-scale)); }
+            .header p { font-size: calc(1.1em * var(--font-scale)); }
+            h2 { font-size: calc(1.5em * var(--font-scale)); }
+            .opcoes-container button, .opcoes-container select, .btn-principal, .btn-secundario { font-size: calc(1em * var(--font-scale)); padding: 12px 15px; }
+            .questao-texto { font-size: calc(3em * var(--font-scale)); margin: 25px 0; }
+            .opcoes-resposta button { font-size: calc(1.3em * var(--font-scale)); padding: 15px; }
 
             .barra-tempo-container {
                 position: fixed;
@@ -331,6 +317,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 margin: 0;
                 border-radius: 0;
                 z-index: 1000;
+                height: 10px; /* Reduz a altura para mobile */
             }
             .contador-combo {
                 position: fixed;
@@ -341,7 +328,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 padding: 5px 10px;
                 border-radius: 5px;
                 color: white !important;
-                font-size: 1.5em;
+                font-size: calc(1.5em * var(--font-scale));
             }
             .container {
                 margin-top: 65px;
@@ -349,7 +336,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
         }
     </style>
 </head>
-<body>
+<body class="tema-escuro">
 
     <div id="tela-inicial" class="container"> 
         <header class="header">
@@ -420,10 +407,20 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             <h2>Configurações de Acessibilidade</h2>
             
             <div style="text-align: left; margin-top: 25px; line-height: 2.2em;">
-                <label for="toggle-tema" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Ativar Tema Escuro:</label>
+                
+                <label style="font-size: 1.1em; display: block; margin-bottom: 10px;">Ajustar Tamanho da Fonte (Zoom):</label>
+                <div style="display: flex; align-items: center; justify-content: space-between; max-width: 200px; margin: 0 auto 20px;">
+                    <button id="btn-zoom-out" class="btn-secundario" style="padding: 5px 10px; font-size: 1.5em; border-radius: 50%; width: 40px; height: 40px; border-color: var(--cor-acento); color: var(--cor-acento);">-</button>
+                    <span id="current-zoom" style="font-size: 1.2em; font-weight: bold;">100%</span>
+                    <button id="btn-zoom-in" class="btn-secundario" style="padding: 5px 10px; font-size: 1.5em; border-radius: 50%; width: 40px; height: 40px; border-color: var(--cor-acento); color: var(--cor-acento);">+</button>
+                </div>
+                
+                <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 155, 89, 182), 0.3);">
+
+                <label for="toggle-tema" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Alternar Tema Claro/Escuro:</label>
                 <input type="checkbox" id="toggle-tema" role="switch" aria-label="Alternar para Tema Escuro">
                 
-                <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 108, 92, 231), 0.3);">
+                <hr style="margin: 25px 0; border-color: rgba(var(--cor-primaria-rgb, 155, 89, 182), 0.3);">
 
                 <label for="toggle-tts" style="font-size: 1.1em; display: block; margin-bottom: 10px;">Leitura em Voz (TTS):</label>
                 <input type="checkbox" id="toggle-tts" role="switch" aria-label="Ativar Leitura em Voz (TTS)">
@@ -572,6 +569,9 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             nivel: 'facil',
             ttsAtivo: false,
             librasAtivo: false,
+            dislexiaAtiva: false, 
+            // NOVO: Escala de Fonte (de 0.8 a 1.4)
+            fontSizeScale: 1.0, 
             historicoErros: [],
             questaoAtual: null,
             timer: null,
@@ -579,7 +579,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             tempoRestante: 10,
             acertosConsecutivos: 0,
             professorModeClicks: 0,
-            temaAtual: 'tema-escuro',
+            temaAtual: 'tema-escuro', // Padrão agora é escuro para o novo design
         };
         
         const DOM = {
@@ -604,6 +604,12 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             toggleTema: document.getElementById('toggle-tema'),
             toggleTts: document.getElementById('toggle-tts'),
             toggleLibras: document.getElementById('toggle-libras'),
+            toggleDislexia: document.getElementById('toggle-dislexia'),
+            // NOVOS: Elementos de Zoom
+            btnZoomIn: document.getElementById('btn-zoom-in'),
+            btnZoomOut: document.getElementById('btn-zoom-out'),
+            currentZoom: document.getElementById('current-zoom'),
+
             modoProfessorContainer: document.getElementById('modo-professor-container'),
             btnSairProfessor: document.getElementById('btn-sair-professor'),
             limparHistorico: document.getElementById('limpar-historico'),
@@ -633,7 +639,29 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 STATE.temaAtual = tema;
                 document.body.classList.remove('tema-claro', 'tema-escuro');
                 document.body.classList.add(tema);
-                DOM.toggleTema.checked = tema === 'tema-escuro';
+                // O Tema Escuro é o padrão, então o checkbox deve estar DESMARCADO para o tema claro
+                DOM.toggleTema.checked = tema === 'tema-claro'; 
+            },
+            
+            aplicarDislexia(ativo) {
+                STATE.dislexiaAtiva = ativo;
+                if (ativo) {
+                    document.body.classList.add('modo-dislexia');
+                } else {
+                    document.body.classList.remove('modo-dislexia');
+                }
+                DOM.toggleDislexia.checked = ativo;
+            },
+
+            // NOVO: Função para aplicar o tamanho da fonte
+            aplicarTamanhoFonte(scale) {
+                STATE.fontSizeScale = Math.min(1.4, Math.max(0.8, scale)); // Limita entre 80% e 140%
+                document.documentElement.style.setProperty('--font-scale', STATE.fontSizeScale);
+                
+                const percent = Math.round(STATE.fontSizeScale * 100);
+                DOM.currentZoom.textContent = `${percent}%`;
+                
+                LOGICA.salvarEstado();
             },
 
             falar(texto) {
@@ -645,17 +673,21 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
 
             mostrarFeedback(texto, tipo) {
                 DOM.feedbackMentor.textContent = texto;
-                DOM.feedbackMentor.style.backgroundColor = tipo === 'acerto' ? 'var(--cor-acerto)' : (tipo === 'erro' ? 'var(--cor-erro)' : '#444');
+                DOM.feedbackMentor.style.backgroundColor = tipo === 'acerto' ? 'var(--cor-acerto)' : (tipo === 'erro' ? 'var(--cor-erro)' : '#2C3E50');
                 DOM.feedbackMentor.style.color = 'white';
                 
                 const mentor = tipo === 'acerto' ? 'Rafael' : 'Ronaldo';
                 UI.falar(`${mentor} diz: ${texto}`);
 
+                // Controla a visibilidade da janela de Libras
                 DOM.janelaLibras.style.display = STATE.librasAtivo ? 'block' : 'none';
+                if(STATE.librasAtivo) {
+                    DOM.janelaLibras.textContent = `[Vídeo Libras para: ${tipo === 'acerto' ? 'Acerto' : 'Erro/Dica'}]`;
+                }
             },
             
             piscarTela(cor) {
-                const corOriginal = STATE.temaAtual === 'tema-escuro' ? 'var(--cor-fundo-escuro)' : 'var(--cor-fundo-claro)';
+                const corOriginal = STATE.temaAtual === 'tema-escuro' ? 'var(--cor-fundo-escuro)' : '#F8F9FA';
                 document.body.style.backgroundColor = cor;
                 setTimeout(() => document.body.style.backgroundColor = corOriginal, 500);
             }
@@ -675,13 +707,22 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 if (savedState) {
                     const loaded = JSON.parse(savedState);
                     Object.assign(STATE, loaded);
+                    
+                    // Aplica estados
                     DOM.xpBaseInput.value = STATE.xpBase;
                     DOM.toggleTts.checked = STATE.ttsAtivo;
                     DOM.toggleLibras.checked = STATE.librasAtivo;
+                    
+                    // Aplica as configurações salvas de tema, dislexia e fonte
                     UI.aplicarTema(STATE.temaAtual);
+                    UI.aplicarDislexia(STATE.dislexiaAtiva);
+                    UI.aplicarTamanhoFonte(STATE.fontSizeScale);
+                    
                 } else {
-                    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    UI.aplicarTema(isDark ? 'tema-escuro' : 'tema-claro');
+                    // Configuração inicial para o novo design
+                    UI.aplicarTema('tema-escuro');
+                    UI.aplicarDislexia(false);
+                    UI.aplicarTamanhoFonte(1.0);
                 }
             },
 
@@ -695,6 +736,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 STATE.tempoInicial = STATE.modo === 'rapido' ? 10 : 0;
                 LOGICA.proximaQuestao();
                 UI.navegar('jogo');
+                UI.falar(`Iniciando o modo ${STATE.modo === 'rapido' ? 'rápido' : 'normal'}, com ${STATE.operacao} no nível ${STATE.nivel}.`);
             },
 
             proximaQuestao() {
@@ -705,7 +747,8 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 // 50% de chance de repetir um erro passado
                 if (STATE.historicoErros.length > 0 && Math.random() < 0.5) {
                     const erro = STATE.historicoErros[Math.floor(Math.random() * STATE.historicoErros.length)];
-                    questao = CONTEUDO.gerarQuestao(erro.operacao, erro.nivel);
+                    // Recria a questão com os mesmos parâmetros do erro
+                    questao = CONTEUDO.gerarQuestao(erro.operacao, erro.nivel); 
                 } else {
                     questao = CONTEUDO.gerarQuestao(STATE.operacao, STATE.nivel);
                 }
@@ -714,6 +757,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                 DOM.questaoTexto.textContent = questao.pergunta;
                 DOM.questaoNumero.textContent = `Questão: ${Math.floor(STATE.xpAtual / STATE.xpBase) + 1}`;
                 DOM.contadorCombo.textContent = `Combo: x${STATE.combo}`;
+                UI.falar(questao.pergunta); // Le a pergunta em voz alta
                 
                 questao.opcoes.forEach((opcao, index) => {
                     const btn = document.createElement('button');
@@ -795,7 +839,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
                         nivel: STATE.questaoAtual.nivel
                     });
 
-                    UI.piscarTela('rgba(255, 0, 0, 0.2)');
+                    UI.piscarTela('rgba(231, 76, 60, 0.3)'); // Vermelho mais forte
                     const correta = Array.from(DOM.opcoesResposta.children).find(btn => Number(btn.dataset.resposta) === STATE.questaoAtual.resposta);
                     if (correta) {
                         correta.classList.add('feedback-acerto');
@@ -852,7 +896,7 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             limparHistorico() {
                 if (confirm("ATENÇÃO: Isso limpará permanentemente todo o progresso. Continuar?")) {
                     localStorage.removeItem('matemagicaState');
-                    Object.assign(STATE, { xpAtual: 0, tokens: 0, historicoErros: [] });
+                    Object.assign(STATE, { xpAtual: 0, tokens: 0, historicoErros: [], dislexiaAtiva: false, ttsAtivo: false, librasAtivo: false, fontSizeScale: 1.0, temaAtual: 'tema-escuro' });
                     LOGICA.salvarEstado();
                     alert("Histórico e dados de progresso limpos.");
                     location.reload(); 
@@ -875,9 +919,18 @@ Aqui está o `index.html` final, completo (V. 24.0) e com a correção dos avata
             DOM.btnIniciar.onclick = LOGICA.iniciarSessao;
             
             // --- Eventos de Acessibilidade/Config ---
-            DOM.toggleTema.onchange = (e) => { UI.aplicarTema(e.target.checked ? 'tema-escuro' : 'tema-claro'); LOGICA.salvarEstado(); };
+            DOM.toggleTema.onchange = (e) => { 
+                UI.aplicarTema(e.target.checked ? 'tema-claro' : 'tema-escuro'); 
+                LOGICA.salvarEstado(); 
+            };
             DOM.toggleTts.onchange = (e) => { STATE.ttsAtivo = e.target.checked; LOGICA.salvarEstado(); };
             DOM.toggleLibras.onchange = (e) => { STATE.librasAtivo = e.target.checked; LOGICA.salvarEstado(); };
+            DOM.toggleDislexia.onchange = (e) => { UI.aplicarDislexia(e.target.checked); LOGICA.salvarEstado(); };
+            
+            // NOVO: Eventos de Zoom
+            DOM.btnZoomIn.onclick = () => UI.aplicarTamanhoFonte(STATE.fontSizeScale + 0.1);
+            DOM.btnZoomOut.onclick = () => UI.aplicarTamanhoFonte(STATE.fontSizeScale - 0.1);
+            
             document.getElementById('btn-config').onclick = () => UI.navegar('config');
             document.getElementById('btn-voltar-inicial').onclick = () => UI.navegar('inicial');
             

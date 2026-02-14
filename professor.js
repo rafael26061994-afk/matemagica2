@@ -21,6 +21,29 @@
     btnExportJson: document.getElementById('btn-export-json'),
     btnExportCsv: document.getElementById('btn-export-csv'),
     btnClear: document.getElementById('btn-clear'),
+    btnPaste: document.getElementById('btn-paste'),
+    pasteWrap: document.getElementById('paste-wrap'),
+    btnImportWeekly: document.getElementById('btn-import-weekly'),
+    fileWeekly: document.getElementById('file-weekly'),
+    btnWeeklyPasteJson: document.getElementById('btn-weekly-paste-json'),
+    btnWeeklyPasteQr: document.getElementById('btn-weekly-paste-qr'),
+    weeklyPasteJson: document.getElementById('weekly-paste-json'),
+    weeklyPasteQr: document.getElementById('weekly-paste-qr'),
+    inpWeeklyJson: document.getElementById('inp-weekly-json'),
+    btnImportWeeklyJson: document.getElementById('btn-import-weekly-json'),
+    btnCloseWeeklyJson: document.getElementById('btn-close-weekly-json'),
+    inpWeeklyQrChunk: document.getElementById('inp-weekly-qrchunk'),
+    btnAddWeeklyQrChunk: document.getElementById('btn-add-weekly-qrchunk'),
+    btnResetWeeklyQr: document.getElementById('btn-reset-weekly-qr'),
+    btnCloseWeeklyQr: document.getElementById('btn-close-weekly-qr'),
+    weeklyQrProgress: document.getElementById('weekly-qr-progress'),
+    weeklyQrDebug: document.getElementById('weekly-qr-debug'),
+    weeklyTblBody: document.getElementById('weekly-tbl-body'),
+    weeklyCountText: document.getElementById('weekly-count-text'),
+    weeklyClassSummary: document.getElementById('weekly-class-summary'),
+    intervList: document.getElementById('interv-list'),
+    intervRec: document.getElementById('interv-rec'),
+    btnCopyRec: document.getElementById('btn-copy-rec'),
     btnCopyWhats: document.getElementById('btn-copy-whats'),
     classSummary: document.getElementById('class-summary'),
     interventionText: document.getElementById('intervention-text'),
@@ -45,8 +68,9 @@
   }
 
   function loadDb(){
-    const db = safeParse(localStorage.getItem(DB_KEY), { reports: [] });
-    if (!db || !Array.isArray(db.reports)) return { reports: [] };
+    const db = safeParse(localStorage.getItem(DB_KEY), { reports: [], weekly: [] });
+    if (!db || !Array.isArray(db.reports)) return { reports: [], weekly: [] };
+    if (!Array.isArray(db.weekly)) db.weekly = [];
     return db;
   }
   function saveDb(db){
@@ -77,6 +101,89 @@
     saveDb(db);
   }
 
+  // === Weekly summaries (Casa → Escola) ===
+  function keyForWeekly(w){
+    return [
+      String(w.student?.turma||w.student?.classId||'').trim(),
+      String(w.student?.code||w.student?.name||'').trim(),
+      String(w.windowDays||''),
+      String(w.generatedAt||'')
+    ].join('|');
+  }
+
+  function upsertWeekly(newW){
+    const db = loadDb();
+    const k = keyForWeekly(newW);
+    const idx = db.weekly.findIndex(w => keyForWeekly(w) === k);
+    if (idx >= 0) db.weekly[idx] = newW;
+    else db.weekly.unshift(newW);
+    if (db.weekly.length > 4000) db.weekly.length = 4000;
+    saveDb(db);
+  }
+
+  
+  // --- QR Casa→Escola (Resumo semanal) ---
+  function b64urlDecode(b64url){
+    let b64 = String(b64url||'').replace(/-/g,'+').replace(/_/g,'/');
+    while (b64.length % 4) b64 += '=';
+    return decodeURIComponent(escape(atob(b64)));
+  }
+  function parseWeeklyQrChunk(line){
+    const s = String(line||'').trim();
+    if (!s) return null;
+    if (!s.startsWith('PETWS1|')) throw new Error('Código QR inválido: esperado PETWS1|...');
+    const parts = s.split('|');
+    if (parts.length < 4) throw new Error('Código QR incompleto.');
+    const id = parts[1];
+    const frac = parts[2];
+    const payload = parts.slice(3).join('|'); // allow | inside (rare)
+    const m = frac.match(/^(\d+)\/(\d+)$/);
+    if (!m) throw new Error('Código QR inválido: parte/total.');
+    const idx = parseInt(m[1],10);
+    const total = parseInt(m[2],10);
+    if (!(idx>=1 && total>=1 && idx<=total)) throw new Error('Código QR inválido: índice fora do range.');
+    return { id, idx, total, payload };
+  }
+  const weeklyQrBuffer = { id:null, total:0, parts:{} };
+  function resetWeeklyQrBuffer(){
+    weeklyQrBuffer.id = null;
+    weeklyQrBuffer.total = 0;
+    weeklyQrBuffer.parts = {};
+    if (els.weeklyQrProgress) els.weeklyQrProgress.textContent = 'Aguardando partes...';
+  }
+  function addWeeklyQrChunk(line){
+    const c = parseWeeklyQrChunk(line);
+    if (!c) return;
+    if (!weeklyQrBuffer.id){
+      weeklyQrBuffer.id = c.id;
+      weeklyQrBuffer.total = c.total;
+    }
+    if (weeklyQrBuffer.id !== c.id) throw new Error('Você começou um resumo diferente. Use "Resetar" e cole as partes do mesmo ID.');
+    if (weeklyQrBuffer.total !== c.total) throw new Error('Total de partes não confere. Use "Resetar".');
+    weeklyQrBuffer.parts[c.idx] = c.payload;
+    const got = Object.keys(weeklyQrBuffer.parts).length;
+    if (els.weeklyQrProgress) els.weeklyQrProgress.textContent = `Recebidas ${got}/${weeklyQrBuffer.total} partes (ID ${weeklyQrBuffer.id}).`;
+    if (got === weeklyQrBuffer.total){
+      let joined = '';
+      for (let i=1;i<=weeklyQrBuffer.total;i++){
+        if (!weeklyQrBuffer.parts[i]) throw new Error('Faltando parte '+i);
+        joined += weeklyQrBuffer.parts[i];
+      }
+      const json = b64urlDecode(joined);
+      const obj = parseWeeklyJson(json);
+      upsertWeekly(obj);
+      render();
+      resetWeeklyQrBuffer();
+      alert('Resumo semanal importado com sucesso (via QR).');
+    }
+  }
+
+function parseWeeklyJson(raw){
+    const obj = JSON.parse(String(raw||''));
+    if (!obj || obj.schema !== 'PET_WEEKLY_SUMMARY_v1') throw new Error('JSON não é um resumo semanal PET válido.');
+    return obj;
+  }
+
   function fmtPeriod(r){
     const s = new Date(r.periodStart).toLocaleDateString('pt-BR');
     const e = new Date(r.periodEnd).toLocaleDateString('pt-BR');
@@ -99,7 +206,15 @@
     }
     if (per && per !== 'all'){
       const now = Date.now();
-      const start = per === '7d' ? now - 7*24*3600*1000 : per === '30d' ? now - 30*24*3600*1000 : 0;
+      let start = 0;
+      if (per === 'today'){
+        const d = new Date(); d.setHours(0,0,0,0);
+        start = d.getTime();
+      } else if (per === 'last7'){
+        start = now - 7*24*3600*1000;
+      } else if (per === 'last30'){
+        start = now - 30*24*3600*1000;
+      }
       list = list.filter(r => Number(r.periodEnd||0) >= start);
     }
 
@@ -133,6 +248,7 @@
     }
 
     renderSummary(list);
+    renderWeekly(db.weekly, cls, per);
     refreshClassFilter(db.reports);
   }
 
@@ -180,7 +296,124 @@
     return out;
   }
 
-  function buildInterventionText(list){
+  
+let PET_INTERVENTIONS = null;
+
+async function loadInterventions(){
+  if (PET_INTERVENTIONS) return PET_INTERVENTIONS;
+  try{
+    const res = await fetch('./interventions.json', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    PET_INTERVENTIONS = await res.json();
+  }catch(e){
+    PET_INTERVENTIONS = {items:[]};
+  }
+  return PET_INTERVENTIONS;
+}
+
+function pickInterventionsForTopOp(topOp){
+  const op = String(topOp||'').toLowerCase();
+  if (!PET_INTERVENTIONS || !Array.isArray(PET_INTERVENTIONS.items)) return [];
+  if (!op) return PET_INTERVENTIONS.items.slice(0,4);
+  // mapeia nomes internos
+  const map = { addition:'add', subtracao:'sub', subtraction:'sub', multiplication:'mul', divisao:'div', division:'div' };
+  const opKey = map[op] || op;
+  return PET_INTERVENTIONS.items.filter(x => x.op === opKey);
+}
+
+function formatInterventionCard(it){
+  const lines = [];
+  lines.push(`🧩 ${it.title} (${it.duration_min||10} min)`);
+  if (it.materials?.length) lines.push(`Materiais: ${it.materials.join(', ')}`);
+  lines.push('');
+  lines.push('Passo a passo:');
+  (it.steps||[]).forEach((s,i)=> lines.push(`${i+1}) ${s}`));
+  if (it.observe?.length){
+    lines.push('');
+    lines.push('Observar:');
+    it.observe.forEach(s=> lines.push(`• ${s}`));
+  }
+  if (it.revalidate){
+    lines.push('');
+    lines.push(`Revalidar: ${it.revalidate}`);
+  }
+  return lines.join('\n');
+}
+
+async function renderInterventionLibrary(topOp){
+  const box = document.getElementById('intervention');
+  if (!box) return;
+  await loadInterventions();
+
+  // cria/acha container
+  let lib = document.getElementById('interv-lib');
+  if (!lib){
+    lib = document.createElement('div');
+    lib.id = 'interv-lib';
+    lib.style.marginTop = '12px';
+    box.appendChild(lib);
+  }
+  lib.innerHTML = '';
+
+  const list = pickInterventionsForTopOp(topOp);
+  if (!list.length){
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = 'Biblioteca de intervenções indisponível (interventions.json não carregou).';
+    lib.appendChild(p);
+    return;
+  }
+
+  const title = document.createElement('h4');
+  title.textContent = 'Biblioteca de intervenções (10–15 min)';
+  title.style.margin = '6px 0 8px';
+  lib.appendChild(title);
+
+  // mostra no máx 6 pra não virar parede
+  const show = list.slice(0,6);
+  for (const it of show){
+    const card = document.createElement('div');
+    card.className = 'info-card';
+    card.style.marginTop = '10px';
+
+    const h = document.createElement('div');
+    h.style.display = 'flex';
+    h.style.alignItems = 'center';
+    h.style.justifyContent = 'space-between';
+    h.style.gap = '10px';
+
+    const left = document.createElement('div');
+    left.innerHTML = `<strong>${it.title}</strong><div class="tiny muted">${it.tag} • ${it.duration_min||10} min</div>`;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'main-btn';
+    btn.textContent = 'Copiar plano';
+    btn.addEventListener('click', async () => {
+      const txt = formatInterventionCard(it);
+      try{ await navigator.clipboard.writeText(txt); }catch(e){}
+      showToast?.('Plano copiado.');
+    });
+
+    h.appendChild(left);
+    h.appendChild(btn);
+
+    const pre = document.createElement('pre');
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.marginTop = '10px';
+    pre.style.padding = '12px';
+    pre.style.borderRadius = '16px';
+    pre.style.background = 'rgba(0,0,0,0.04)';
+    pre.style.border = '1px solid rgba(0,0,0,0.08)';
+    pre.style.fontSize = '0.95em';
+    pre.textContent = formatInterventionCard(it);
+
+    card.appendChild(h);
+    card.appendChild(pre);
+    lib.appendChild(card);
+  }
+}
+function buildInterventionText(list){
     if (!list.length) return {text:'Importe relatórios para gerar uma recomendação automática.', canCopy:false};
 
     // Agrega erros por operação
@@ -202,7 +435,7 @@
     const [topOp, topErr] = [...opMap.entries()].sort((a,b)=>b[1]-a[1])[0] || ['—',0];
     const topAcc = accMap.has(topOp) ? Math.round(accMap.get(topOp)*100) : 0;
 
-    // Pega top mistakes do primeiro relatório (geralmente aluno) — se houver vários, tenta o maior “wrong”
+    // Pega top mistakes do primeiro relatório (geralmente estudante) — se houver vários, tenta o maior “wrong”
     const best = list.slice().sort((a,b)=>Number(b.summary?.wrong||0)-Number(a.summary?.wrong||0))[0] || list[0];
     const patt = detectPatternFromMistakes(best.topMistakes || []);
 
@@ -241,6 +474,8 @@
   function renderIntervention(list){
     const r = buildInterventionText(list);
     if (els.interventionText) els.interventionText.textContent = r.text;
+    // Biblioteca de planos por erro (10–15 min)
+    renderInterventionLibrary(r.topOp);
     if (els.btnCopyIntervention){
       els.btnCopyIntervention.disabled = !r.canCopy;
       els.btnCopyIntervention.onclick = ()=>{
@@ -294,13 +529,263 @@ function renderSummary(list){
     renderIntervention(list);
   }
 
+
+  function statusPill(accuracy, activeDays){
+    const a = (accuracy==null) ? null : Number(accuracy);
+    const d = Number(activeDays||0);
+    // Sem drama: critérios práticos
+    if (a != null && a >= 80 && d >= 3) return {label:'VERDE', cls:'pill'};
+    if (a != null && a >= 70 && d >= 2) return {label:'AMARELO', cls:'pill'};
+    return {label:'VERMELHO', cls:'pill'};
+  }
+
+  function skillTagHuman(tag){
+    const t = String(tag||'').trim();
+    const map = {
+      'add_le20':'Adição até 20',
+      'add_carry_2d':'Adição com vai‑um',
+      'add_basic':'Adição (base)',
+      'add_mix':'Adição (mista)',
+      'sub_le20':'Subtração até 20',
+      'sub_borrow_2d':'Subtração com empréstimo',
+      'sub_basic':'Subtração (base)',
+      'sub_mix':'Subtração (mista)',
+      'mult_0_5':'Tabuadas 0–5',
+      'mult_6_10':'Tabuadas 6–10',
+      'mult_mix':'Multiplicação (mista)',
+      'div_exact':'Divisão exata',
+      'div_remainder':'Divisão com resto',
+      'pow_squares':'Potenciação (quadrados)',
+      'root_squares':'Radiciação (quadrados)'
+    };
+    return map[t] || t || '—';
+  }
+
+  function suggestInterventionFromWeekly(w){
+    // prioridade: top skillTag + pior operação
+    const top = (w.difficulties?.topSkillTags||[])[0]?.tag || '';
+    const opEntries = Object.entries(w.performance?.byOperation || {});
+    const worstOp = opEntries
+      .filter(([,v])=>v && v.questions>0 && v.accuracy!=null)
+      .sort((a,b)=>Number(a[1].accuracy)-Number(b[1].accuracy))[0];
+
+    const parts = [];
+    parts.push(`Estudante: ${w.student?.name || w.student?.code || '—'} · Turma: ${w.student?.turma || '—'}`);
+    parts.push(`Uso (7d): ${w.usage?.activeDays||0} dias · ${w.usage?.totalMinutes||0} min · ${w.usage?.sessions||0} sessões`);
+    if (w.performance?.accuracy!=null) parts.push(`Precisão geral (7d): ${w.performance.accuracy}%`);
+
+    const targetSkill = skillTagHuman(top);
+    if (top) parts.push(`Maior dificuldade: ${targetSkill}`);
+
+    // ação de 10 minutos (padrão PET)
+    const action = [];
+    action.push('Ação (10 min):');
+    if (top === 'sub_borrow_2d'){
+      action.push('1) 3 exemplos no caderno: “troca 1 dezena por 10 unidades” (mostre a troca).');
+      action.push('2) 5 questões no app focando “empréstimo” (sem pressa).');
+      action.push('3) 1 questão mista no final (para evitar treino mecânico).');
+    } else if (top === 'add_carry_2d'){
+      action.push('1) 3 exemplos no caderno: completar 10 e mostrar o “vai‑um”.');
+      action.push('2) 5 questões no app com vai‑um.');
+      action.push('3) 1 questão mista.');
+    } else if (top === 'mult_0_5' || top === 'mult_6_10' || top === 'mult_mix'){
+      action.push('1) 2 min: grupos iguais/área (desenho rápido).');
+      action.push('2) 6–8 questões de tabuada do nível (no app).');
+      action.push('3) 1 aplicação curta: “6 caixas com 7”.');
+    } else if (top === 'div_remainder' || top === 'div_exact'){
+      action.push('1) 2 min: partilha (desenho de grupos).');
+      action.push('2) 6 questões de divisão (no app).');
+      action.push('3) checagem: “multiplicação inversa” (6×? = 24).');
+    } else {
+      action.push('1) Identifique o erro recorrente (top 1) e faça 2 exemplos no caderno.');
+      action.push('2) Rode 10 questões no app focadas nessa habilidade.');
+      action.push('3) Feche com 1 item mista.');
+    }
+
+    if (worstOp){
+      action.push(`Observação: pior operação na semana = ${opLabel(worstOp[0])} (${worstOp[1].accuracy}% de precisão; ${worstOp[1].questions} questões).`);
+    }
+
+    return parts.join('\n') + '\n\n' + action.join('\n');
+  }
+
+  function renderWeekly(allWeekly, clsFilter, perFilter){
+    if (!els.weeklyTblBody || !els.weeklyCountText || !els.weeklyClassSummary) return;
+
+    const now = Date.now();
+    let start = 0;
+    if (perFilter === 'today'){
+      const d = new Date(); d.setHours(0,0,0,0); start = d.getTime();
+    } else if (perFilter === 'last7'){
+      start = now - 7*24*3600*1000;
+    } else if (perFilter === 'last30'){
+      start = now - 30*24*3600*1000;
+    }
+
+    let list = Array.isArray(allWeekly) ? allWeekly.slice() : [];
+    if (clsFilter){
+      list = list.filter(w => String(w.student?.turma||'').trim().toLowerCase() === clsFilter.toLowerCase());
+    }
+    if (perFilter && perFilter !== 'all'){
+      list = list.filter(w => Number(w.generatedAt||0) >= start);
+    }
+
+    els.weeklyCountText.textContent = `${list.length} resumos.`;
+    els.weeklyTblBody.innerHTML = '';
+
+    // table rows
+    for (const w of list){
+      const tr = document.createElement('tr');
+      const who = (w.student?.code || w.student?.name || '-');
+      const turma = w.student?.turma || '-';
+      const acc = w.performance?.accuracy;
+      const activeDays = w.usage?.activeDays || 0;
+      const mins = w.usage?.totalMinutes || 0;
+      const topTag = (w.difficulties?.topSkillTags||[])[0]?.tag || '';
+      const topTagLabel = topTag ? skillTagHuman(topTag) : '—';
+      const pill = statusPill(acc, activeDays);
+
+      tr.innerHTML = `
+        <td><div><strong>${escapeHtml(who)}</strong><div class="muted tiny">${escapeHtml(w.student?.name||'')}</div></div></td>
+        <td>${escapeHtml(turma)}</td>
+        <td>
+          <div><span class="${pill.cls}">${pill.label}</span></div>
+          <div class="muted tiny">${escapeHtml(String(activeDays))} dias · ${escapeHtml(String(mins))} min · ${escapeHtml(String(w.usage?.sessions||0))} sessões</div>
+        </td>
+        <td>
+          <div><strong>${acc==null ? '—' : escapeHtml(String(acc))+'%'}</strong></div>
+          <div class="muted tiny">Perguntas: ${escapeHtml(String(w.usage?.questions||0))} · ${acc==null?'':('~'+escapeHtml(String(w.performance?.byOperation ? '' : '')))}</div>
+        </td>
+        <td>
+          <div><strong>${escapeHtml(topTagLabel)}</strong></div>
+          <div class="muted tiny">${topTag ? escapeHtml(topTag) : ''}</div>
+        </td>
+        <td>
+          <button class="main-btn tiny-btn" data-action="wdetails">Ver</button>
+          <button class="main-btn tiny-btn" data-action="wcopy">Copiar ação</button>
+          <button class="main-btn tiny-btn" data-action="wremove">Remover</button>
+        </td>
+      `;
+
+      tr.querySelector('[data-action="wdetails"]').addEventListener('click', ()=>{
+        const txt = suggestInterventionFromWeekly(w);
+        alert(txt);
+      });
+      tr.querySelector('[data-action="wcopy"]').addEventListener('click', async ()=>{
+        const txt = suggestInterventionFromWeekly(w);
+        try{
+          await navigator.clipboard.writeText(txt);
+          alert('Copiado.');
+        }catch(_){
+          prompt('Copie:', txt);
+        }
+      });
+      tr.querySelector('[data-action="wremove"]').addEventListener('click', ()=>{
+        removeWeekly(w);
+      });
+
+      els.weeklyTblBody.appendChild(tr);
+    }
+
+    renderWeeklySummary(list);
+  }
+
+  function removeWeekly(w){
+    const db = loadDb();
+    const k = keyForWeekly(w);
+    db.weekly = db.weekly.filter(x => keyForWeekly(x) !== k);
+    saveDb(db);
+    render();
+  }
+
+  function renderWeeklySummary(list){
+    if (!els.weeklyClassSummary) return;
+    if (!list.length){
+      els.weeklyClassSummary.innerHTML = '<h3>Visão rápida (últimos 7 dias)</h3><p class="muted">Importe resumos semanais (JSON) para ver sinais de estudo em casa e dificuldades.</p>';
+      return;
+    }
+
+    // Agregações simples
+    const totals = list.reduce((acc,w)=>{
+      acc.students += 1;
+      acc.activeDaysSum += Number(w.usage?.activeDays||0);
+      acc.minutesSum += Number(w.usage?.totalMinutes||0);
+      if (w.performance?.accuracy != null){
+        acc.accCount += 1;
+        acc.accSum += Number(w.performance.accuracy||0);
+      }
+      return acc;
+    }, {students:0, activeDaysSum:0, minutesSum:0, accSum:0, accCount:0});
+
+    const avgDays = totals.students ? Math.round((totals.activeDaysSum/totals.students)*10)/10 : 0;
+    const avgMin = totals.students ? Math.round((totals.minutesSum/totals.students)*10)/10 : 0;
+    const avgAcc = totals.accCount ? Math.round((totals.accSum/totals.accCount)*10)/10 : null;
+
+    // top skill tags
+    const tagMap = new Map();
+    for (const w of list){
+      for (const t of (w.difficulties?.topSkillTags||[])){
+        const tag = String(t.tag||'');
+        tagMap.set(tag, (tagMap.get(tag)||0) + Number(t.count||0));
+      }
+    }
+    const topTags = [...tagMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+    // pior operação por acurácia média (quando existir)
+    const opAgg = new Map();
+    for (const w of list){
+      const byOp = w.performance?.byOperation || {};
+      for (const op of Object.keys(byOp)){
+        const v = byOp[op];
+        if (!v || v.accuracy == null) continue;
+        const cur = opAgg.get(op) || {sum:0, n:0};
+        cur.sum += Number(v.accuracy||0);
+        cur.n += 1;
+        opAgg.set(op, cur);
+      }
+    }
+    const worstOp = [...opAgg.entries()]
+      .map(([op,v])=>[op, v.n ? (v.sum/v.n) : 100])
+      .sort((a,b)=>a[1]-b[1])[0];
+
+    const cls = String(list[0].student?.turma||'').trim() || '—';
+
+    const action = [];
+    action.push(`Turma ${cls} — Casa → Escola (7d)`);
+    action.push(`Média de estudo: ${avgDays} dias/semana · ${avgMin} min/semana`);
+    if (avgAcc!=null) action.push(`Precisão média (7d): ${avgAcc}%`);
+    if (worstOp) action.push(`Maior dor (operação): ${opLabel(worstOp[0])} (~${Math.round(worstOp[1])}%)`);
+    if (topTags.length){
+      action.push('Top dificuldades (tags):');
+      topTags.slice(0,3).forEach(([tag,c])=>action.push(`- ${skillTagHuman(tag)} (${c})`));
+    }
+    action.push('');
+    action.push('Intervenção sugerida (15 min em sala):');
+    if (worstOp){
+      action.push(`1) 5 min de explicação concreta em ${opLabel(worstOp[0])} (reta/blocos/área).`);
+      action.push('2) 8 min de prática guiada (10 questões) no app focando a habilidade do topo.');
+      action.push('3) 2 min: 2 itens mistos no caderno (transferência).');
+    } else {
+      action.push('1) 5 min: revisão do erro dominante (top tag).');
+      action.push('2) 10 min: prática guiada no app.');
+    }
+
+    els.weeklyClassSummary.innerHTML = `
+      <h3>Visão rápida (últimos 7 dias)</h3>
+      <div class="muted tiny">Turma: <strong>${escapeHtml(cls)}</strong> · Resumos: <strong>${list.length}</strong></div>
+      <div style="margin-top:8px;">${escapeHtml(action.slice(0,4).join(' · '))}</div>
+      <div class="muted tiny" style="margin-top:10px;"><strong>Dificuldades mais comuns</strong></div>
+      <ul style="margin:8px 0 0 18px;">${topTags.length ? topTags.map(([tag,c])=>`<li>${escapeHtml(skillTagHuman(tag))} <span class="muted">(${c})</span></li>`).join('') : '<li class="muted">—</li>'}</ul>
+      <pre style="white-space:pre-wrap;margin-top:10px;padding:12px;border-radius:16px;background:rgba(0,0,0,0.04);border:1px solid rgba(0,0,0,0.08);font-size:0.95em;">${escapeHtml(action.join('\n'))}</pre>
+    `;
+  }
   function showDetails(r){
     const byOp = r.breakdown?.byOperation || {};
     const ops = Object.keys(byOp);
     const mistakes = (r.topMistakes||[]).slice(0,5);
 
     const html = `
-      Aluno: ${r.studentCode||'-'} ${r.studentName? '('+r.studentName+')':''}
+      Estudante: ${r.studentCode||'-'} ${r.studentName? '('+r.studentName+')':''}
       Turma: ${r.classId||'-'}
       Período: ${fmtPeriod(r)}
       Questões: ${r.summary.questions} | Acertos: ${r.summary.correct} | Erros: ${r.summary.wrong} | Precisão: ${r.summary.accuracy}%
@@ -333,10 +818,23 @@ function renderSummary(list){
 
   function importFromTextarea(){
     const raw = String(els.inpCode.value||'').trim();
-    if (!raw) return alert('Cole o código MMR1 gerado pelo aluno.');
+    if (!raw) return alert('Cole o código MMR1 do relatório OU cole o JSON do resumo semanal.');
     try {
-      const r = parseCode(raw);
-      upsertReport(r);
+      // 1) MMR1 (código)
+      if (raw.startsWith('MMR1:')){
+        const r = parseCode(raw);
+        upsertReport(r);
+      } else {
+        // 2) JSON (resumo semanal ou relatório exportado)
+        const obj = JSON.parse(raw);
+        if (obj && obj.schema === 'PET_WEEKLY_SUMMARY_v1'){
+          upsertWeekly(obj);
+        } else if (obj && obj.schemaVersion === '1.0'){
+          upsertReport(obj);
+        } else {
+          throw new Error('Formato não reconhecido. Use MMR1:... ou JSON PET_WEEKLY_SUMMARY_v1.');
+        }
+      }
       els.inpCode.value = '';
       render();
       toast('✅ Importado!');
@@ -350,8 +848,13 @@ function renderSummary(list){
     fr.onload = ()=>{
       try {
         const obj = JSON.parse(String(fr.result||''));
-        if (!obj || obj.schemaVersion !== '1.0') throw new Error('Arquivo inválido (schemaVersion 1.0).');
-        upsertReport(obj);
+        if (obj && obj.schema === 'PET_WEEKLY_SUMMARY_v1'){
+          upsertWeekly(obj);
+        } else if (obj && obj.schemaVersion === '1.0'){
+          upsertReport(obj);
+        } else {
+          throw new Error('Arquivo JSON não reconhecido. Esperado: schemaVersion 1.0 (relatório) ou PET_WEEKLY_SUMMARY_v1 (resumo semanal).');
+        }
         render();
         toast('✅ Importado do arquivo!');
       } catch (e) {
@@ -411,7 +914,27 @@ function renderSummary(list){
     render();
   }
 
-  function copyWhats(){
+  
+  function copyText(text){
+    const t = String(text||'').trim();
+    if (!t) return;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(()=>toast('Copiado ✅')).catch(()=>fallbackCopy(t));
+    } else fallbackCopy(t);
+  }
+  function fallbackCopy(text){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      toast('Copiado ✅');
+    }catch(e){ alert('Não foi possível copiar automaticamente.'); }
+  }
+function copyWhats(){
     const db = loadDb();
     if (!db.reports.length) return alert('Importe relatórios primeiro.');
     const cls = els.filterClass?.value || (db.reports[0].classId || '');
@@ -429,7 +952,7 @@ function renderSummary(list){
       `📊 Matemágica — Resumo ${cls? 'da turma '+cls : ''}`,
       `Relatórios: ${list.length}`,
       `Questões: ${total.questions} | Precisão média: ${accPct}%`,
-      `Top 5 alunos (por precisão):`,
+      `Top 5 estudantes (por precisão):`,
       ...list.slice().sort((a,b)=>Number(b.summary.accuracy||0)-Number(a.summary.accuracy||0)).slice(0,5).map(r=>`- ${(r.studentCode||r.studentName||'-')}: ${r.summary.accuracy}% (${r.summary.correct}/${r.summary.questions})`)
     ].join('\n');
 
@@ -445,6 +968,8 @@ function renderSummary(list){
   let stream = null;
   let scanning = false;
   let detector = null;
+  let lastRaw = '';
+  let lastRawAt = 0;
 
   async function startScan(){
     if (scanning) return;
@@ -489,14 +1014,30 @@ function renderSummary(list){
       const codes = await detector.detect(els.video);
       if (codes && codes.length){
         const raw = codes[0].rawValue || '';
-        if (raw.startsWith('MMR1:')) {
-          const r = parseCode(raw);
-          upsertReport(r);
-          render();
-          toast(`✅ Importado: ${(r.studentCode||r.studentName||'-')}`);
-          // continua escaneando (1 toque para o próximo: só manter a câmera aberta)
-          // Evitar import duplicado em loop
-          await sleep(900);
+        const now = Date.now();
+        // Evitar reprocessar o mesmo QR em loop (câmera parada)
+        if (raw && raw === lastRaw && (now - lastRawAt) < 1200) {
+          // ignore
+        } else if (raw) {
+          lastRaw = raw; lastRawAt = now;
+
+          if (raw.startsWith('MMR1:')) {
+            const r = parseCode(raw);
+            upsertReport(r);
+            render();
+            toast(`✅ Importado (MMR1): ${(r.studentCode||r.studentName||'-')}`);
+            await sleep(900);
+          } else if (raw.startsWith('PETWS1|')) {
+            try {
+              addWeeklyQrChunk(raw);
+              // addWeeklyQrChunk atualiza o progresso e alerta quando completa
+              toast('📦 Parte do resumo semanal capturada.');
+            } catch (e) {
+              console.warn(e);
+              toast('⚠️ QR de resumo inválido/fora de ordem. Use “Resetar” e tente novamente.');
+            }
+            await sleep(900);
+          }
         }
       }
     } catch (_) {}
@@ -553,6 +1094,58 @@ function renderSummary(list){
     render();
 
     els.btnImport?.addEventListener('click', importFromTextarea);
+    els.btnPaste?.addEventListener('click', togglePaste);
+    els.btnImportWeekly?.addEventListener('click', ()=>els.fileWeekly?.click());
+
+    // Resumo semanal: opções sem arquivo (colar JSON / colar texto do QR)
+    els.btnWeeklyPasteJson?.addEventListener('click', ()=>{
+      if (els.weeklyPasteQr) els.weeklyPasteQr.style.display = 'none';
+      if (els.weeklyPasteJson) els.weeklyPasteJson.style.display = (els.weeklyPasteJson.style.display==='none' || !els.weeklyPasteJson.style.display) ? 'block' : 'none';
+    });
+    els.btnWeeklyPasteQr?.addEventListener('click', ()=>{
+      if (els.weeklyPasteJson) els.weeklyPasteJson.style.display = 'none';
+      if (els.weeklyPasteQr) els.weeklyPasteQr.style.display = (els.weeklyPasteQr.style.display==='none' || !els.weeklyPasteQr.style.display) ? 'block' : 'none';
+      resetWeeklyQrBuffer();
+    });
+    els.btnImportWeeklyJson?.addEventListener('click', ()=>{
+      const raw = String(els.inpWeeklyJson?.value||'');
+      if (!raw.trim()) return alert('Cole o JSON primeiro.');
+      try{
+        const obj = parseWeeklyJson(raw);
+        upsertWeekly(obj);
+        render();
+        els.inpWeeklyJson.value = '';
+        if (els.weeklyPasteJson) els.weeklyPasteJson.style.display = 'none';
+        alert('Resumo semanal importado.');
+      }catch(e){
+        alert(e?.message || 'Falha ao importar JSON.');
+      }
+    });
+    els.btnCloseWeeklyJson?.addEventListener('click', ()=>{
+      if (els.weeklyPasteJson) els.weeklyPasteJson.style.display = 'none';
+    });
+    els.btnAddWeeklyQrChunk?.addEventListener('click', ()=>{
+      try{
+        const line = String(els.inpWeeklyQrChunk?.value||'');
+        if (!line.trim()) return alert('Cole o texto do QR primeiro.');
+        addWeeklyQrChunk(line);
+        els.inpWeeklyQrChunk.value = '';
+      }catch(e){
+        alert(e?.message || 'Falha ao adicionar parte.');
+      }
+    });
+    els.btnResetWeeklyQr?.addEventListener('click', resetWeeklyQrBuffer);
+    els.btnCloseWeeklyQr?.addEventListener('click', ()=>{
+      if (els.weeklyPasteQr) els.weeklyPasteQr.style.display = 'none';
+      resetWeeklyQrBuffer();
+    });
+
+    els.fileWeekly?.addEventListener('change', ()=>{
+      const f = els.fileWeekly.files?.[0];
+      if (!f) return;
+      importFromFile(f);
+      try{ els.fileWeekly.value = ''; }catch(_){}
+    });
     els.filterClass?.addEventListener('change', render);
     els.filterPeriod?.addEventListener('change', render);
 
@@ -595,4 +1188,251 @@ function renderSummary(list){
   }
 
   init();
+})();
+  function togglePaste(){
+    if (!els.pasteWrap) return;
+    const on = els.pasteWrap.style.display !== 'none';
+    els.pasteWrap.style.display = on ? 'none' : 'block';
+    if (!on && els.inpCode) els.inpCode.focus();
+  }
+
+
+
+/* =========================================================
+   PET — Painel Analítico Local (somente neste dispositivo)
+   Marcador: PET_LOCAL_ANALYTICS_v1
+   Lê sessões do localStorage (se existirem) e mostra 4 cards:
+   Consistência, Precisão, Velocidade, Erros recorrentes + Diagnóstico.
+   ========================================================= */
+(function(){
+  'use strict';
+
+  const KEY_CANDIDATES = ['pet_sessions', 'pet_sessoes', 'pet_sessoes_v1'];
+
+  function readJSON(key){
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function getSessions(){
+    for (const k of KEY_CANDIDATES) {
+      const v = readJSON(k);
+      if (Array.isArray(v)) return { key: k, sessions: v };
+    }
+    return { key: null, sessions: [] };
+  }
+
+  function asNumber(x){
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function sessionDate(s){
+    // Prefer explicit date fields
+    const d = s?.date || s?.data;
+    if (typeof d === 'string') {
+      const dt = new Date(d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    // Fallback to timestamps
+    const ts = s?.tsStart || s?.startTs || s?.timestamp;
+    if (typeof ts === 'number') {
+      const dt = new Date(ts);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    if (typeof ts === 'string') {
+      const dt = new Date(ts);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    return null;
+  }
+
+  function skillKeyOf(s){
+    return s?.skillKey || s?.skill || s?.habilidade || s?.key || '__unknown__';
+  }
+
+  function accuracyOf(s){
+    const acc = asNumber(s?.accuracy ?? s?.percentual);
+    if (acc !== null) return acc;
+    const correct = asNumber(s?.correct ?? s?.acertos);
+    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
+    if (correct !== null && attempts && attempts > 0) return (correct / attempts) * 100;
+    return null;
+  }
+
+  function avgSecOf(s){
+    // Prefer avgSec if available
+    const avg = asNumber(s?.avgSec ?? s?.tempoMedio);
+    if (avg !== null) return avg;
+
+    const durationSec = asNumber(s?.durationSec ?? s?.duracaoSec ?? s?.tempoTotalSec);
+    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
+    if (durationSec !== null && attempts && attempts > 0) return durationSec / attempts;
+    return null;
+  }
+
+  function isCompleted(s){
+    if (typeof s?.completed === 'boolean') return s.completed;
+    if (typeof s?.concluida === 'boolean') return s.concluida;
+    // default: if has attempts assume completed
+    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
+    return attempts !== null && attempts > 0;
+  }
+
+  function isSuspect(s){
+    return !!(s?.suspect || s?.suspectSession);
+  }
+
+  function withinLastDays(dt, days){
+    if (!dt) return false;
+    const now = new Date();
+    const ms = days * 24 * 60 * 60 * 1000;
+    return (now.getTime() - dt.getTime()) <= ms;
+  }
+
+  function topErrors(sessions, topN=3){
+    const counter = Object.create(null);
+    for (const s of sessions) {
+      const errs = s?.errorsTop || s?.errosTop || s?.erros || s?.errors;
+      if (!errs) continue;
+      const arr = Array.isArray(errs) ? errs : [];
+      for (const e of arr) {
+        const k = String(e);
+        counter[k] = (counter[k] || 0) + 1;
+      }
+    }
+    const entries = Object.entries(counter).sort((a,b)=>b[1]-a[1]).slice(0, topN);
+    if (!entries.length) return 'Nenhum';
+    return entries.map(([k,v]) => `${k} (${v})`).join(', ');
+  }
+
+  function mean(nums){
+    const arr = nums.filter(n => Number.isFinite(n));
+    if (!arr.length) return null;
+    return arr.reduce((a,b)=>a+b,0) / arr.length;
+  }
+
+  function uniq(arr){
+    return Array.from(new Set(arr));
+  }
+
+  function $(id){ return document.getElementById(id); }
+
+  function refresh(){
+    const { sessions } = getSessions();
+    const sel = $('pet-skill-filter');
+    const filterKey = sel ? sel.value : '__all__';
+
+    const usable = sessions.filter(s => isCompleted(s) && !isSuspect(s));
+    const filtered = (filterKey && filterKey !== '__all__')
+      ? usable.filter(s => skillKeyOf(s) === filterKey)
+      : usable;
+
+    const last7 = filtered.filter(s => withinLastDays(sessionDate(s), 7)).length;
+
+    const last5 = filtered.slice(-5);
+    const acc5 = mean(last5.map(accuracyOf));
+
+    // velocity only if accuracy >= 70 (avoid "chute rápido")
+    const vel5 = mean(last5.filter(s => (accuracyOf(s) ?? 0) >= 70).map(avgSecOf));
+
+    // Fill UI
+    const el7 = $('pet7'); if (el7) el7.textContent = String(last7);
+
+    const elAcc5 = $('petAcc5');
+    if (elAcc5) elAcc5.textContent = acc5 === null ? '—' : acc5.toFixed(1);
+
+    const elAvg5 = $('petAvg5');
+    if (elAvg5) elAvg5.textContent = vel5 === null ? '—' : `${vel5.toFixed(2)}s/questão`;
+
+    const elErr = $('petErrTop');
+    if (elErr) elErr.textContent = topErrors(last5, 3);
+
+    const diag = $('petDiag');
+    if (diag) diag.textContent = buildDiag(usable, filtered, last7, acc5, vel5);
+  }
+
+  function buildDiag(usableAll, usableFiltered, last7, acc5, vel5){
+    if (!usableAll.length) {
+      return 'Sem dados locais de sessões ainda. Para usar este painel, o app precisa registrar e salvar as sessões neste dispositivo.';
+    }
+    if (!usableFiltered.length) {
+      return 'Sem sessões válidas para este filtro (ou foram marcadas como suspeitas).';
+    }
+    const parts = [];
+    if (last7 < 2) parts.push('⚠ Baixa consistência (meta: 3–5 sessões/semana).');
+    else if (last7 <= 5) parts.push('✅ Consistência ok para consolidar.');
+    else parts.push('✅ Frequência alta; cuide para não virar “maratona” cansativa.');
+
+    if (acc5 !== null) {
+      if (acc5 < 70) parts.push('⚠ Precisão baixa: precisa reforço estruturado (voltar 1 passo e revisar erros).');
+      else if (acc5 < 85) parts.push('📈 Em desenvolvimento: manter treino + revisão dirigida pelos erros recorrentes.');
+      else parts.push('🏆 Boa consolidação: pronto para aumentar dificuldade gradualmente.');
+    } else {
+      parts.push('Precisão: dados insuficientes.');
+    }
+
+    if (vel5 !== null && acc5 !== null && acc5 >= 85) {
+      parts.push(vel5 <= 3 ? 'Fluência boa: velocidade já está competitiva.' : 'Fluência em progresso: manter precisão e reduzir tempo aos poucos.');
+    }
+    return parts.join(' ');
+  }
+
+  function rebuildSkillOptions(){
+    const { sessions } = getSessions();
+    const sel = $('pet-skill-filter');
+    if (!sel) return;
+
+    const usable = sessions.filter(s => isCompleted(s) && !isSuspect(s));
+    const keys = uniq(usable.map(skillKeyOf).filter(k => k && k !== '__unknown__'));
+
+    // Reset
+    sel.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = '__all__';
+    optAll.textContent = 'Todas';
+    sel.appendChild(optAll);
+
+    for (const k of keys.sort()) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k;
+      sel.appendChild(opt);
+    }
+  }
+
+  function clearLocal(){
+    if (!confirm('Isso vai apagar os dados de sessões PET salvos neste dispositivo (localStorage). Continuar?')) return;
+    for (const k of KEY_CANDIDATES) localStorage.removeItem(k);
+    rebuildSkillOptions();
+    refresh();
+  }
+
+  function bind(){
+    const btnR = $('btn-pet-refresh');
+    const btnC = $('btn-pet-clear');
+    const sel = $('pet-skill-filter');
+
+    if (btnR) btnR.addEventListener('click', () => { rebuildSkillOptions(); refresh(); });
+    if (btnC) btnC.addEventListener('click', clearLocal);
+    if (sel) sel.addEventListener('change', refresh);
+  }
+
+  // Boot after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      bind();
+      rebuildSkillOptions();
+      refresh();
+    });
+  } else {
+    bind();
+    rebuildSkillOptions();
+    refresh();
+  }
 })();

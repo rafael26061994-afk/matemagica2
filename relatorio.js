@@ -8,6 +8,7 @@
 
   const PROFILE_KEY = 'matemagica_profile_v1';
   const SESSIONS_KEY = 'matemagica_sessions_v1';
+const ATTEMPTS_KEY = 'matemagica_attempts_v1';
   const ERRORS_KEY = 'matemagica_errors';
   const XP_KEY = 'matemagica_xp';
 
@@ -27,6 +28,13 @@
     btnCopy: document.getElementById('btn-copy-code'),
     btnJson: document.getElementById('btn-download-json'),
     btnCsv: document.getElementById('btn-download-csv'),
+    btnWeekly: document.getElementById('btn-download-weekly'),
+    btnWeeklyQr: document.getElementById('btn-weekly-qr'),
+    weeklyQrPanel: document.getElementById('weekly-qr-panel'),
+    weeklyQrList: document.getElementById('weekly-qr-list'),
+    weeklyQrText: document.getElementById('weekly-qr-text'),
+    btnCopyWeeklyCode: document.getElementById('btn-copy-weekly-code'),
+    btnHideWeeklyQr: document.getElementById('btn-hide-weekly-qr'),
   };
 
   function safeParse(raw, fallback){
@@ -160,6 +168,34 @@
     setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
   }
 
+  function buildFullExport(range){
+    const profile = JSON.parse(localStorage.getItem('matemagica_profile_v1') || 'null');
+    const sessoes = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    const tentativas = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '[]');
+
+    const inRange = (iso) => {
+      if (!range || !range.start || !range.end) return true;
+      const t = new Date(iso).getTime();
+      return t >= new Date(range.start).getTime() && t <= new Date(range.end).getTime();
+    };
+
+    const sessoesFiltradas = sessoes.filter(s => inRange(s.dateISO || s.date || s.data));
+    const tentativasFiltradas = tentativas.filter(a => inRange(a.dateISO || a.date || a.data));
+
+    return {
+      exportType: 'matemagica_full_export_v1',
+      createdAtISO: new Date().toISOString(),
+      range,
+      profile,
+      sessions: sessoesFiltradas,
+      attempts: tentativasFiltradas,
+      counts: {
+        sessions: sessoesFiltradas.length,
+        attempts: tentativasFiltradas.length
+      }
+    };
+  }
+
   function buildReport(){
     const identity = {
       studentName: String(els.inpName.value || '').trim(),
@@ -168,7 +204,7 @@
       school: String(els.inpSchool.value || '').trim()
     };
 
-    const period = startEndFromPeriod(els.periodSelect.value || '7d');
+    const period = startEndFromPeriod(els.periodSelect.value || 'last7');
     const sessions = loadSessions().filter(s => Number(s?.ts) >= period.start && Number(s?.ts) <= period.end);
     const errors = loadErrors().filter(e => Number(e?.timestamp) >= period.start && Number(e?.timestamp) <= period.end);
 
@@ -180,7 +216,8 @@
       durationSec: 0
     };
 
-    const byOp = {}; // operation => stats
+    const byOp = {};
+    const byTag = {}; // operation => stats
     for (const s of sessions){
       const op = String(s?.operation || 'unknown');
       if (!byOp[op]) byOp[op] = {questions:0, correct:0, wrong:0};
@@ -204,7 +241,14 @@
     const accuracy = sum.questions > 0 ? Math.round((sum.correct / sum.questions) * 100) : 0;
 
     // Top mistakes: use error question string if exists, else operation label
-    const topMistakes = summarizeTop(errors, (e)=>{
+    
+    // Breakdown por skillTag (principalmente para intervenção do professor)
+    for (const e of errors){
+      const op = String(e?.operacao || '').trim();
+      const tag = String(e?.skillTag || '').trim() || (op ? ('op:' + op) : 'desconhecido');
+      byTag[tag] = (byTag[tag]||0) + 1;
+    }
+const topMistakes = summarizeTop(errors, (e)=>{
       if (e?.question) return String(e.question);
       if (e?.operation) return `Erro em ${String(e.operation)}`;
       return '';
@@ -243,7 +287,7 @@
   function renderReport(report){
     const lines = [];
     lines.push(`<div class="tiny muted">Gerado em: <strong>${escapeHtml(fmtDate(report.createdAt))}</strong></div>`);
-    lines.push(`<div style="margin-top:8px;"><span class="pill">Turma</span> ${escapeHtml(report.classId || '-')}&nbsp;&nbsp;<span class="pill">Aluno</span> ${escapeHtml(report.studentCode || report.studentName || '-')}</div>`);
+    lines.push(`<div style="margin-top:8px;"><span class="pill">Turma</span> ${escapeHtml(report.classId || '-')}&nbsp;&nbsp;<span class="pill">Estudante</span> ${escapeHtml(report.studentCode || report.studentName || '-')}</div>`);
     lines.push(`<div style="margin-top:8px;">Questões: <strong>${report.summary.questions}</strong> · Acertos: <strong>${report.summary.correct}</strong> · Erros: <strong>${report.summary.wrong}</strong> · Precisão: <strong>${report.summary.accuracy}%</strong></div>`);
     lines.push(`<div class="bar" style="margin-top:8px;"><div style="width:${report.summary.accuracy}%;"></div></div>`);
     lines.push(`<div class="tiny muted" style="margin-top:8px;">XP ganho no período: <strong>${report.summary.xpGained}</strong> · XP total: <strong>${report.summary.xpTotal}</strong> · Tempo: <strong>${report.summary.durationSec}s</strong></div>`);
@@ -302,7 +346,165 @@
     new QRCode(els.qr, { text: code, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.M });
   }
 
-  function init(){
+  
+  // --- Resumo semanal (Casa → Escola) ---
+  function safeJson(raw, fallback){
+    try{ 
+      const v = raw ? JSON.parse(raw) : fallback;
+      return (v === undefined || v === null) ? fallback : v;
+    }catch(_){ 
+      return fallback; 
+    }
+  }
+
+  function buildWeeklySummary(days=7){
+    const now = Date.now();
+    const since = now - days*24*60*60*1000;
+
+    const profile = safeJson(localStorage.getItem(PROFILE_KEY), null);
+    const sessions = safeJson(localStorage.getItem(SESSIONS_KEY), []);
+    const errors = safeJson(localStorage.getItem(ERRORS_KEY), []);
+
+    const weekSessions = Array.isArray(sessions) ? sessions.filter(s => (s && Number(s.ts) >= since)) : [];
+    const weekErrors = Array.isArray(errors) ? errors.filter(e => (e && Number(e.ts) >= since)) : [];
+
+    const daySet = new Set();
+    let totalSec = 0, totalCorrect = 0, totalWrong = 0, totalQ = 0;
+
+    const byOp = {};
+    weekSessions.forEach(s=>{
+      const ts = Number(s.ts)||0;
+      const d = new Date(ts);
+      if(!isNaN(d)) daySet.add(d.toISOString().slice(0,10));
+
+      totalSec += Number(s.durationSec)||0;
+      totalCorrect += Number(s.correct)||0;
+      totalWrong += Number(s.wrong)||0;
+      totalQ += Number(s.questions)||0;
+
+      const op = String(s.operation||'');
+      if(!byOp[op]) byOp[op] = {sessions:0, questions:0, correct:0, wrong:0, accuracy:null, avgSecPerQ:null};
+      byOp[op].sessions += 1;
+      byOp[op].questions += Number(s.questions)||0;
+      byOp[op].correct += Number(s.correct)||0;
+      byOp[op].wrong += Number(s.wrong)||0;
+    });
+
+    Object.keys(byOp).forEach(op=>{
+      const q = byOp[op].questions || 0;
+      const sec = weekSessions.filter(s=>String(s.operation||'')===op).reduce((a,s)=>a+(Number(s.durationSec)||0),0);
+      byOp[op].avgSecPerQ = q>0 ? Math.round((sec/q)*10)/10 : null;
+      byOp[op].accuracy = q>0 ? Math.round((byOp[op].correct/q)*1000)/10 : null;
+    });
+
+    const tagCount = {};
+    weekErrors.forEach(e=>{
+      const tag = String(e.skillTag||'').trim() || '(sem tag)';
+      tagCount[tag] = (tagCount[tag]||0)+1;
+    });
+    const topTags = Object.entries(tagCount)
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5)
+      .map(([tag,count])=>({tag,count}));
+
+    return {
+      schema: "PET_WEEKLY_SUMMARY_v1",
+      generatedAt: now,
+      windowDays: days,
+      student: {
+        name: String(profile?.name || ''),
+        code: String(profile?.code || ''),
+        turma: String(profile?.turma || ''),
+        escola: String(profile?.escola || '')
+      },
+      usage: {
+        activeDays: daySet.size,
+        totalMinutes: Math.round(totalSec/60),
+        sessions: weekSessions.length,
+        questions: totalQ
+      },
+      performance: {
+        accuracy: totalQ>0 ? Math.round((totalCorrect/totalQ)*1000)/10 : null,
+        byOperation: byOp
+      },
+      difficulties: {
+        topSkillTags: topTags
+      },
+      notes: "Resumo semanal gerado offline. Para validação fora do app, aplique o protocolo PET-8 (caderno)."
+    };
+  }
+
+  // --- QR Casa→Escola (Resumo semanal) ---
+  function b64urlEncode(str){
+    // UTF-8 safe base64url
+    const b64 = btoa(unescape(encodeURIComponent(str)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function b64urlDecode(b64url){
+    let b64 = String(b64url||'').replace(/-/g,'+').replace(/_/g,'/');
+    // pad
+    while (b64.length % 4) b64 += '=';
+    return decodeURIComponent(escape(atob(b64)));
+  }
+  function shortId(s){
+    // deterministic short id (not crypto)
+    let h = 2166136261;
+    for (let i=0;i<s.length;i++){
+      h ^= s.charCodeAt(i);
+      h = (h * 16777619) >>> 0;
+    }
+    return h.toString(16).slice(0,8);
+  }
+  function makeWeeklyQrChunks(summaryObj, maxChunkLen=800){
+    const json = JSON.stringify(summaryObj);
+    const payload = b64urlEncode(json);
+    const id = shortId(payload);
+    const total = Math.ceil(payload.length / maxChunkLen);
+    const chunks = [];
+    for (let i=0;i<total;i++){
+      const part = payload.slice(i*maxChunkLen, (i+1)*maxChunkLen);
+      chunks.push(`PETWS1|${id}|${i+1}/${total}|${part}`);
+    }
+    return { id, total, chunks, json };
+  }
+  function renderWeeklyQr(chunksObj){
+    if (!els.weeklyQrPanel || !els.weeklyQrList || !els.weeklyQrText) return;
+    els.weeklyQrList.innerHTML = '';
+    els.weeklyQrText.value = chunksObj.chunks.join('\n');
+    for (let i=0;i<chunksObj.chunks.length;i++){
+      const code = chunksObj.chunks[i];
+      const card = document.createElement('div');
+      card.style.border = '1px solid rgba(255,255,255,0.16)';
+      card.style.borderRadius = '14px';
+      card.style.padding = '10px';
+      card.style.background = 'rgba(0,0,0,0.18)';
+      const label = document.createElement('div');
+      label.className = 'tiny muted';
+      label.style.marginBottom = '6px';
+      label.textContent = `QR ${i+1}/${chunksObj.total}`;
+      const qr = document.createElement('div');
+      qr.style.display = 'flex';
+      qr.style.justifyContent = 'center';
+      qr.style.alignItems = 'center';
+      new QRCode(qr, { text: code, width: 170, height: 170, correctLevel: QRCode.CorrectLevel.M });
+      card.appendChild(label);
+      card.appendChild(qr);
+      els.weeklyQrList.appendChild(card);
+    }
+    els.weeklyQrPanel.style.display = 'block';
+  }
+
+  function downloadJsonFile(filename, obj){
+    const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+
+function init(){
     // Profile select (single for now)
     if (els.profileSelect){
       els.profileSelect.innerHTML = '<option value="app">Atual (do app)</option>';
@@ -351,7 +553,7 @@
       const code = String(els.code.value||'').trim();
       if (!code) return alert('Gere o relatório primeiro.');
       const report = parseCode(code);
-      const name = `matemagica_relatorio_${(report.studentCode||report.studentName||'aluno')}_${report.periodStart}_${report.periodEnd}.json`;
+      const name = `matemagica_relatorio_${(report.studentCode||report.studentName||'estudante')}_${report.periodStart}_${report.periodEnd}.json`;
       download(name, 'application/json;charset=utf-8', JSON.stringify(report, null, 2));
     });
 
@@ -359,10 +561,43 @@
       const code = String(els.code.value||'').trim();
       if (!code) return alert('Gere o relatório primeiro.');
       const report = parseCode(code);
-      const name = `matemagica_relatorio_${(report.studentCode||report.studentName||'aluno')}_${report.periodStart}_${report.periodEnd}.csv`;
+      const name = `matemagica_relatorio_${(report.studentCode||report.studentName||'estudante')}_${report.periodStart}_${report.periodEnd}.csv`;
       download(name, 'text/csv;charset=utf-8', makeCsv(report));
+
+
+    els.btnWeekly?.addEventListener('click', ()=>{
+      const summary = buildWeeklySummary(7);
+      const safeName = (summary.student.code || summary.student.name || 'estudante').toString().trim().replace(/\s+/g,'_');
+      const name = `matemagica_resumo_semanal_${safeName}.json`;
+      downloadJsonFile(name, summary);
     });
-  }
+    });
+  
+    // QR Casa→Escola (Resumo semanal)
+    els.btnWeeklyQr?.addEventListener('click', ()=>{
+      const summary = buildWeeklySummary(7);
+      const chunksObj = makeWeeklyQrChunks(summary, 800);
+      renderWeeklyQr(chunksObj);
+    });
+    els.btnCopyWeeklyCode?.addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText(String(els.weeklyQrText?.value || ''));
+        alert('Código copiado. Cole no Painel do Professor.');
+      }catch(_){
+        // fallback
+        try{
+          els.weeklyQrText?.select();
+          document.execCommand('copy');
+          alert('Código copiado. Cole no Painel do Professor.');
+        }catch(__){
+          alert('Não consegui copiar automaticamente. Selecione e copie o texto.');
+        }
+      }
+    });
+    els.btnHideWeeklyQr?.addEventListener('click', ()=>{
+      if (els.weeklyQrPanel) els.weeklyQrPanel.style.display = 'none';
+    });
+}
 
   init();
 })();

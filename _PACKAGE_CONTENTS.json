@@ -1,0 +1,25 @@
+{
+  "packaged_files": [
+    "README.md",
+    "Sem titulo.png",
+    "a11y.js",
+    "alert-sound.mp3",
+    "family.html",
+    "icon-192.png",
+    "icon-512.png",
+    "index.html",
+    "interventions.json",
+    "manifest.webmanifest",
+    "professor.html",
+    "professor.js",
+    "qrcode.min.js",
+    "rafael.png",
+    "relatorio.html",
+    "relatorio.js",
+    "ronaldo.png",
+    "script.js",
+    "style.css",
+    "sw.js"
+  ],
+  "missing_updated_sources": []
+}

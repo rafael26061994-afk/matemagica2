@@ -1,39 +1,55 @@
-# Matemágica Duo (GitHub Pages)
+# Matemágica (v19.1) — PWA offline-first (GitHub Pages)
 
-## Como subir no GitHub Pages
-1. Crie (ou use) um repositório no GitHub.
-2. Envie **todos** estes arquivos para a raiz do repositório:
-   - index.html
-   - script.js
-   - style.css
-   - alert-sound.mp3
-   - Sem titulo.png
-   - ronaldo.png
-   - rafael.png
-3. Vá em **Settings > Pages**:
+Projeto educacional (EF II 6º–9º) com gamificação estilo “campanha”, missões diárias de 5 minutos e acessibilidade incremental.
+
+## Como publicar no GitHub Pages
+
+1) Crie (ou use) um repositório no GitHub.
+2) Envie **todos** os arquivos desta pasta para a **raiz** do repositório (mesmo nível do index.html).
+3) Vá em **Settings → Pages**:
    - Source: **Deploy from a branch**
-   - Branch: **main** (root)
-4. Salve e abra o link gerado pelo GitHub Pages.
+   - Branch: **main** (/**root**)
+4) Salve e abra a URL do Pages.
 
-## Novidades desta versão
-- Multiplicação com **Tabuada 0–20**:
-  - **Trilha automática** (0–20 em ordem aleatória)
-  - **Escolher tabuada** diretamente
-  - Rodada completa com multiplicadores **0 a 20** (ordem embaralhada)
-- Alternativas com prefixo **1) 2) 3) 4)** (menor que o número)
-- Responder clicando **ou** digitando **1, 2, 3, 4** (teclado / numpad)
-- No modo rápido: ao acertar, o **tempo volta ao normal** (ao errar, fica mais lento para ajudar a recuperar)
+Arquivos obrigatórios (mínimo):
+- index.html, style.css, script.js, sw.js, manifest.webmanifest
+- a11y.js
+- relatorio.html, relatorio.js
+- professor.html, professor.js, qrcode.min.js
+- icon-192.png, icon-512.png
+- rafael.png, ronaldo.png, Sem titulo.png
+- alert-sound.mp3
 
+## Como forçar atualização (cache / PWA)
 
-## Atualização (v5)
-- Potenciação exibida com expoente sobrescrito (ex.: 2³) e, no modo Leitura de Voz, lida como “2 elevado a 3”.
-- No Modo Rápido: acertou -> tempo recarrega para o total; errou -> o tempo restante continua.
+Quando você atualizar arquivos no GitHub Pages, o Service Worker pode manter cache antigo.
 
+Opções (use na ordem):
+1) **Recarregamento forte**:
+   - PC: Ctrl+Shift+R
+2) **Limpar cache do site**:
+   - Chrome: Cadeado → “Configurações do site” → “Limpar dados”
+3) **Desinstalar e reinstalar PWA** (se instalado).
+4) **DevTools**:
+   - Application → Service Workers → “Unregister”
+   - Application → Clear storage → “Clear site data”
 
-## Relatório do Estudante e Painel do Professor (offline)
-- **relatorio.html**: o aluno gera um código **MMR1** e um **QR** com o desempenho do período.
-- **professor.html**: o professor importa por **QR** (quando disponível no navegador) ou colando o código.
+Observação: esta versão usa `CACHE_NAME = matemagica-duo-v19.1` em `sw.js`.
 
-Dica: para abrir direto no GitHub Pages, use:
-- `.../relatorio.html`
-- `.../professor.html`
+## Acessibilidade (v19)
+
+- Foco visível forte (CSS)
+- Atalhos: 1/2/3/4 para alternativas, Enter confirma, Esc fecha modal (quando aplicável)
+- ARIA básico e semântica
+- **VLibras (online)**: carregado por padrão via `a11y.js`
+  - Offline continua funcionando normalmente (VLibras apenas não carrega sem internet)
+
+## O que foi ajustado nesta versão (corte 9,5 / nota 10)
+
+- **Campanha Base vs Reforço** com regra 70/30 (lição vs revisão)
+- **Base**: revisão só da mesma operação + microcheck sempre após 1º erro + sem timer por padrão
+- **Reforço**: revisão mix por pesos (+25%, −25%, ×23%, ÷20%, potência 4%, raiz 3%); microcheck apenas quando instabilidade
+- “Tempo esgotado” não vira “Game Over” (mensagem pedagógica)
+- Adição/Subtração “Padrão B” (misto com vai-um / empréstimo) conforme definido
+- Relatório inclui `breakdown.bySkillTag` para intervenção do professor
+- Painel do professor simplificado: 2 botões grandes (Escanear / Colar), “Limpar tudo” em “Mais”

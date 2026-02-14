@@ -37,6 +37,11 @@ const btnClearErrors = document.getElementById('btn-clear-errors');
 const btnStartTraining = document.getElementById('btn-start-training');
 
 
+
+// --- Helpers seguros (evitam quebrar quando algum botão não existir) ---
+function safeOn(el, evt, fn) { if (el && el.addEventListener) el.addEventListener(evt, fn); }
+function safeSetText(el, txt) { if (el) el.textContent = txt; }
+
 // Variavel para síntese de voz (Web Speech API)
 const synth = window.speechSynthesis;
 
@@ -59,9 +64,15 @@ const gameState = {
 
     // Mentor (balão estilo Duolingo)
     mentor: { enabled: true, who: 'ronaldo', lastMsg: '' },
-isVoiceReadActive: false,
+    wrongStreak: 0,
+    forceEasy: 0,
+    isVoiceReadActive: false,
     isRapidMode: true,
-    errors: [], 
+    errors: [],
+    answerTimes: [],
+    fastAnswers: 0,
+    suspectSession: false,
+ 
     highScores: [], 
 
     // Timer (Modo Rápido)
@@ -106,14 +117,272 @@ isVoiceReadActive: false,
     },
 
 
+    // Pools fixos (50 questões) para Adição/Subtração por nível
+    addSubPools: {
+        addition: { easy: [], medium: [], advanced: [] },
+        subtraction: { easy: [], medium: [], advanced: [] },
+        idx: { addition: { easy: 0, medium: 0, advanced: 0 }, subtraction: { easy: 0, medium: 0, advanced: 0 } },
+        size: 50
+    },
+
+
+
     acertos: 0,
     erros: 0
 };
 
 
+
+/* ===========================
+   MODO ESTUDO — TRAVAS PET (v20.12)
+   Sequência: Adição → Subtração → Multiplicação → Divisão → Potenciação → Radiciação
+   Multiplicação (estudo): tabuadas 1→10 na ordem 1,2,5,10,3,4,6,7,8,9 com avanço por domínio (>=80%).
+   Revisão final: cada erro precisa ser acertado 3x (aleatório).
+=========================== */
+const STUDY_KEY = 'pet_study_progress_v1';
+
+function _studyDefault(){
+  return {
+    unlocked:{addition:true, subtraction:false, multiplication:false, division:false, potenciacao:false, radiciacao:false},
+    mediumPass:{addition:0, subtraction:0, division:0, potenciacao:0, radiciacao:0},
+    advUnlocked:{addition:false, subtraction:false, division:false, potenciacao:false, radiciacao:false},
+    mul:{order:[1,2,5,10,3,4,6,7,8,9], idx:0, phase:'train', review:{}}
+  };
+}
+function studyLoad(){
+  try{ const raw=localStorage.getItem(STUDY_KEY); if(!raw) return _studyDefault();
+       const obj=JSON.parse(raw); return Object.assign(_studyDefault(), obj);
+  }catch(_){ return _studyDefault(); }
+}
+function studySave(st){ try{ localStorage.setItem(STUDY_KEY, JSON.stringify(st)); }catch(_){ } }
+function isStudy(){ return gameState && gameState.isRapidMode===false; }
+function studyCanOp(op){ const st=studyLoad(); return !!(st.unlocked && st.unlocked[op]); }
+function studyLockUI(){
+  try{ const st=studyLoad();
+    operationButtons.forEach(btn=>{
+      const op=btn.getAttribute('data-operation');
+      const locked=isStudy() && st.unlocked && st.unlocked[op]===false;
+      btn.classList.toggle('pet-locked', locked);
+      btn.setAttribute('aria-disabled', locked?'true':'false');
+    });
+  }catch(_){ }
+}
+function studyCanAdvanced(op){ const st=studyLoad(); return !!(st.advUnlocked && st.advUnlocked[op]); }
+function studyRegisterMedium(op, acc, suspect){
+  if(!isStudy() || suspect) return;
+  if(!Number.isFinite(acc) || acc<0.80) return;
+  const st=studyLoad();
+  if(st.mediumPass && (op in st.mediumPass)) st.mediumPass[op]=(st.mediumPass[op]||0)+1;
+  if(st.mediumPass && st.mediumPass[op]>=2) st.advUnlocked[op]=true;
+  if(op==='addition' && st.mediumPass[op]>=2) st.unlocked.subtraction=true;
+  if(op==='subtraction' && st.mediumPass[op]>=2) st.unlocked.multiplication=true;
+  if(op==='division' && st.mediumPass[op]>=2) st.unlocked.potenciacao=true;
+  if(op==='potenciacao' && st.mediumPass[op]>=2) st.unlocked.radiciacao=true;
+  studySave(st); studyLockUI();
+}
+function studyMulCurrent(){
+  const st=studyLoad();
+  const idx=Math.max(0, Math.min((st.mul.order.length-1), st.mul.idx||0));
+  return st.mul.order[idx]||1;
+}
+function studyMulRecordError(q){
+  try{ if(!isStudy()) return;
+    if(!gameState.sessionConfig || gameState.sessionConfig.type!=='study_mul') return;
+    if(!q || q.operacao!=='multiplication') return;
+    const a=Number(q.num1), b=Number(q.num2);
+    if(!Number.isFinite(a)||!Number.isFinite(b)) return;
+    const key=`${a} x ${b}`;
+    const st=studyLoad();
+    if(!st.mul) st.mul=_studyDefault().mul;
+    if(!(key in st.mul.review)) st.mul.review[key]=3;
+    studySave(st);
+  }catch(_){ }
+}
+function studyMulPickReviewPair(){
+  const st=studyLoad();
+  const keys=Object.keys(st.mul.review||{}).filter(k=> (st.mul.review[k]||0)>0);
+  if(keys.length===0) return null;
+  const k=keys[Math.floor(Math.random()*keys.length)];
+  const m=k.match(/^(\d+) x (\d+)$/);
+  if(!m) return null;
+  return [parseInt(m[1],10), parseInt(m[2],10), k];
+}
+function studyMulOnCorrectReview(key){
+  try{ const st=studyLoad(); if(!st.mul||!st.mul.review) return;
+    if(key in st.mul.review){ st.mul.review[key]=Math.max(0,(st.mul.review[key]||0)-1); }
+    studySave(st);
+  }catch(_){ }
+}
+function studyStartMultiplication(){
+  const st=studyLoad();
+  if(!st.mul) st.mul=_studyDefault().mul;
+  // se acabou treino, vai para revisão
+  if(st.mul.phase==='train' && (st.mul.idx||0)>=st.mul.order.length) st.mul.phase='review';
+  // se revisão sem pendências, conclui e libera divisão
+  if(st.mul.phase==='review'){
+    const pending=Object.keys(st.mul.review||{}).filter(k=> (st.mul.review[k]||0)>0);
+    if(pending.length===0){
+      st.mul.phase='done'; st.unlocked.division=true; studySave(st); studyLockUI();
+      showFeedbackMessage('Multiplicação concluída! Divisão liberada no Modo Estudo.', 'incentive', 3200);
+      exibirTela('home-screen');
+      return;
+    }
+    gameState.sessionConfig={type:'study_mul', phase:'review'};
+    gameState.multiplication.mode='direct'; gameState.multiplication.directLock=true;
+    gameState.multiplication.lockTabuada=1; // placeholder, o gerador vai usar override
+    startGame('multiplication','medium');
+    gameState.totalQuestions=10;
+    return;
+  }
+  // treino
+  const t=studyMulCurrent();
+  gameState.sessionConfig={type:'study_mul', phase:'train', tabuada:t};
+  gameState.multiplication.mode='direct'; gameState.multiplication.directLock=true;
+  gameState.multiplication.lockTabuada=t; gameState.multiplication.tabuada=t;
+  startGame('multiplication', (t<=5?'easy':'medium'));
+  gameState.totalQuestions=10;
+}
+function studyMulEndSession(acc, suspect){
+  try{ const st=studyLoad(); if(!st.mul) st.mul=_studyDefault().mul;
+    if(suspect){ studySave(st); return; }
+    if(st.mul.phase==='train'){
+      if(acc>=0.80) st.mul.idx=(st.mul.idx||0)+1;
+      if(st.mul.idx>=st.mul.order.length) st.mul.phase='review';
+      // ao concluir treino libera divisão apenas depois da revisão
+    }
+    if(st.mul.phase==='done') st.unlocked.division=true;
+    studySave(st); studyLockUI();
+  }catch(_){ }
+}
+
+
 // --- FUNÇÕES UTILITY E ACESSIBILIDADE ---
 
 /** Exibe uma tela e oculta as outras */
+
+/* ---------------------------- Onboarding (v20) --------------------------- */
+const ONBOARD_KEY = 'pet_onboarded_v1';
+function shouldShowOnboarding(){
+  try{ return localStorage.getItem(ONBOARD_KEY) !== '1'; }catch(_){ return true; }
+}
+function markOnboardingDone(){
+  try{ localStorage.setItem(ONBOARD_KEY,'1'); }catch(_){}
+}
+function showOnboarding(){
+  const modal = document.getElementById('onboarding-modal');
+  if(!modal) return;
+  const title = document.getElementById('onb-title');
+  const text = document.getElementById('onb-text');
+  const nextBtn = document.getElementById('onb-next');
+  const skipBtn = document.getElementById('onb-skip');
+  const dots = [document.getElementById('onb-dot-1'),document.getElementById('onb-dot-2'),document.getElementById('onb-dot-3')];
+
+  const steps = [
+    {t:'PET: estudo curto e eficiente', d:'Você faz sessões de 10 a 20 minutos. Errar faz parte: o app te dá pistas e reforço, sem punição.'},
+    {t:'Como avançar (domínio real)', d:'Você só conclui uma lição quando acerta bem e mantém estabilidade. Se travar, o app abre uma Missão de Reforço.'},
+    {t:'Dica de ouro', d:'Não chute. Pense e use as estratégias (completar 10, vai‑um, empréstimo, âncoras da tabuada). Isso acelera seu progresso.'}
+  ];
+  let i=0;
+  function render(){
+    dots.forEach((el,idx)=>{ if(el) el.classList.toggle('active', idx===i); });
+    if(title) title.textContent = steps[i].t;
+    if(text) text.textContent = steps[i].d;
+    if(nextBtn) nextBtn.textContent = (i===steps.length-1)?'Começar':'Próximo';
+  }
+  function close(){
+    modal.classList.add('hidden');
+    markOnboardingDone();
+    try{ modal.setAttribute('aria-hidden','true'); }catch(_){}
+  }
+  if(skipBtn) skipBtn.onclick = close;
+  if(nextBtn) nextBtn.onclick = ()=>{ if(i<steps.length-1){ i++; render(); } else { close(); } };
+  modal.classList.remove('hidden');
+  try{ modal.setAttribute('aria-hidden','false'); }catch(_){}
+  render();
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+    wireDifficultiesModal();
+
+  try{
+    // A11y: garantir aria-label nas alternativas
+    document.querySelectorAll('.answer-option').forEach((btn,idx)=>{
+      if(btn && !btn.getAttribute('aria-label')) btn.setAttribute('aria-label', `Alternativa ${idx+1}`);
+    });
+  }catch(_){}
+  initUIModePicker();
+  if(shouldShowOnboarding()) showOnboarding();
+});
+
+
+/* --------------------------- Modo de uso (Celular/PC) --------------------------- */
+const MODE_KEY = 'pet_ui_mode_v1'; // 'mobile' | 'pc'
+function getDefaultMode(){
+  try{
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const narrow = window.innerWidth && window.innerWidth < 900;
+    return (coarse || narrow) ? 'mobile' : 'pc';
+  }catch(_){ return 'mobile'; }
+}
+function getUIMode(){
+  try{
+    const v = localStorage.getItem(MODE_KEY);
+    return (v==='mobile' || v==='pc') ? v : null;
+  }catch(_){ return null; }
+}
+function setUIMode(mode){
+  if(mode!=='mobile' && mode!=='pc') return;
+  try{ localStorage.setItem(MODE_KEY, mode); }catch(_){}
+  applyUIMode(mode);
+}
+function applyUIMode(mode){
+  if(mode!=='mobile' && mode!=='pc') mode = getDefaultMode();
+  document.body.dataset.uiMode = mode;
+  document.body.classList.toggle('ui-mobile', mode==='mobile');
+  document.body.classList.toggle('ui-pc', mode==='pc');
+
+  const bM = document.getElementById('btn-mode-mobile');
+  const bP = document.getElementById('btn-mode-pc');
+  if(bM) bM.classList.toggle('active', mode==='mobile');
+  if(bP) bP.classList.toggle('active', mode==='pc');
+}
+function initUIModePicker(){
+  const saved = getUIMode();
+  applyUIMode(saved || getDefaultMode());
+
+  const bM = document.getElementById('btn-mode-mobile');
+  const bP = document.getElementById('btn-mode-pc');
+  if(bM) bM.addEventListener('click', ()=> setUIMode('mobile'));
+  if(bP) bP.addEventListener('click', ()=> setUIMode('pc'));
+
+  // PC: setas para navegar nas alternativas
+  document.addEventListener('keydown', (e)=>{
+    try{
+      const mode = document.body.dataset.uiMode;
+      if(mode!=='pc') return;
+      const activeScreen = gameState.currentScreen;
+      if(activeScreen!=='game-screen') return;
+      const opts = Array.from(document.querySelectorAll('.answer-option')).filter(Boolean);
+      if(opts.length===0) return;
+
+      const key = e.key;
+      const navKeys = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'];
+      if(!navKeys.includes(key) && key!=='Enter' && key!==' ') return;
+
+      const focused = document.activeElement;
+      let idx = opts.indexOf(focused);
+      if(key==='Enter' || key===' '){
+        if(idx>=0) { e.preventDefault(); focused.click(); }
+        return;
+      }
+      e.preventDefault();
+      if(idx<0) idx = 0;
+      if(key==='ArrowRight' || key==='ArrowDown') idx = (idx+1) % opts.length;
+      if(key==='ArrowLeft' || key==='ArrowUp') idx = (idx-1+opts.length) % opts.length;
+      opts[idx].focus();
+    }catch(_){}
+  });
+}
+
 function exibirTela(id) {
     screens.forEach(screen => {
         screen.classList.remove('active');
@@ -275,6 +544,200 @@ function appendSession(sessionObj) {
 }
 
 
+
+/* ================== PET Intervenções (MVP) ==================
+   Objetivo: reduzir abandono e acelerar domínio com regras simples.
+   - Sem "IA fake"
+   - Gatilhos claros
+   - Persistência local (no dispositivo)
+   Marcador: PET_INTERVENTIONS_v20_13
+============================================================= */
+const PET_INTERVENTIONS_KEY = 'pet_interventions_v1';
+
+function petLoadInterventions(){
+    try{
+        const raw = localStorage.getItem(PET_INTERVENTIONS_KEY);
+        const obj = raw ? JSON.parse(raw) : {};
+        return (obj && typeof obj === 'object') ? obj : {};
+    }catch(_){ return {}; }
+}
+function petSaveInterventions(map){
+    try{ localStorage.setItem(PET_INTERVENTIONS_KEY, JSON.stringify(map||{})); }catch(_){}
+}
+function petGetPlan(skillKey){
+    const map = petLoadInterventions();
+    const plan = map && map[skillKey];
+    return plan && typeof plan === 'object' ? plan : null;
+}
+function petSetPlan(skillKey, plan){
+    const map = petLoadInterventions();
+    map[skillKey] = Object.assign({createdTs: Date.now()}, plan||{});
+    petSaveInterventions(map);
+}
+function petClearPlan(skillKey){
+    const map = petLoadInterventions();
+    if (map && map[skillKey]){ delete map[skillKey]; petSaveInterventions(map); }
+}
+
+function petIsoDate(ts){
+    try{
+        const d = new Date(ts||Date.now());
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const day = String(d.getDate()).padStart(2,'0');
+        return `${y}-${m}-${day}`;
+    }catch(_){ return ''; }
+}
+
+function petSkillKeyFromState(){
+    // "mesma habilidade": operação + nível + modo + variações relevantes
+    const op = String(gameState.currentOperation || 'unknown');
+    const lvl = String(gameState.currentLevel || 'medium');
+    const mode = (gameState.sessionConfig && gameState.sessionConfig.type) ? String(gameState.sessionConfig.type) : (gameState.isRapidMode ? 'rapido' : 'estudo');
+    let mult = '';
+    if (op === 'multiplication' && gameState.multiplication){
+        const mm = gameState.multiplication;
+        const mMode = mm.mode || '';
+        const t = Number.isInteger(mm.tabuada) ? mm.tabuada : (Number.isInteger(mm.lockTabuada) ? mm.lockTabuada : null);
+        const multMin = Number.isInteger(mm.multMin) ? mm.multMin : null;
+        const multMax = Number.isInteger(mm.multMax) ? mm.multMax : null;
+        const trailKey = mm.trailRangeKey || '';
+        mult = `|m:${mMode}|t:${t!=null?t:'x'}|mul:${multMin!=null?multMin:'x'}-${multMax!=null?multMax:'x'}|trail:${trailKey}`;
+    }
+    return `${op}|${lvl}|${mode}${mult}`;
+}
+
+function petNormalizeErrorLabel(err){
+    if (!err || typeof err !== 'object') return null;
+    const op = String(err.operation || '');
+    const n1 = (err.num1!=null && err.num1!==undefined) ? Number(err.num1) : null;
+    const n2 = (err.num2!=null && err.num2!==undefined) ? Number(err.num2) : null;
+    if (op === 'multiplication' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}x${n2}`;
+    if (op === 'division' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}÷${n2}`;
+    if (op === 'addition' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}+${n2}`;
+    if (op === 'subtraction' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}-${n2}`;
+    if (op === 'exponentiation' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}^${n2}`;
+    if (typeof err.question === 'string') return err.question.slice(0, 18);
+    return null;
+}
+
+function petErrorsTopThisSession(maxN=5){
+    try{
+        const startTs = Number.isFinite(gameState.sessionStartTs) ? gameState.sessionStartTs : (Date.now()-86400000);
+        const arr = Array.isArray(gameState.errors) ? gameState.errors : [];
+        const inSession = arr.filter(e => Number(e.timestamp||0) >= startTs);
+        const counts = {};
+        inSession.forEach(e=>{
+            const lab = petNormalizeErrorLabel(e);
+            if (!lab) return;
+            counts[lab] = (counts[lab]||0)+1;
+        });
+        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,maxN).map(([k])=>k);
+    }catch(_){ return []; }
+}
+
+function petAvgSec(){
+    try{
+        const times = Array.isArray(gameState.answerTimes) ? gameState.answerTimes : [];
+        if (!times.length) return null;
+        const sum = times.reduce((a,b)=>a+Number(b||0),0);
+        const avgMs = sum / times.length;
+        return Math.round((avgMs/1000)*100)/100;
+    }catch(_){ return null; }
+}
+
+function petRecentSessionsBySkill(skillKey, n=5){
+    try{
+        const arr = loadSessions();
+        const out = [];
+        for (const s of arr){
+            if (!s) continue;
+            const sk = s.skillKey || s.skill_key || null;
+            const suspect = !!(s.suspect || s.suspectSession);
+            if (suspect) continue;
+            if (sk === skillKey){
+                out.push(s);
+                if (out.length>=n) break;
+            }
+        }
+        return out;
+    }catch(_){ return []; }
+}
+
+function petDecideNextPlan(summary){
+    // summary: {skillKey, accuracy, errors, attempts, suspect, avgSec, op, level}
+    if (summary.suspect) return {kind:'none', note:'Sessão suspeita (sem plano).', autoApply:false};
+
+    // Regra de recuperação: 2 sessões seguidas <70% OU 1 sessão <60% (mesma habilidade)
+    const recent = petRecentSessionsBySkill(summary.skillKey, 2);
+    const last1 = recent[0] || null;
+    const last2 = recent[1] || null;
+    const lastAcc = last1 ? Number(last1.accuracy ?? (last1.correct/Math.max(1,last1.questions))*100) : null;
+    const prevAcc = last2 ? Number(last2.accuracy ?? (last2.correct/Math.max(1,last2.questions))*100) : null;
+
+    if (summary.accuracy < 60 || (lastAcc!=null && prevAcc!=null && lastAcc < 70 && prevAcc < 70)){
+        return {
+            kind:'recovery',
+            totalQuestions: 12,
+            forceStudyMode: true,
+            disableTimer: true,
+            guided: true,
+            note:'Recuperação: reduzir carga + foco em erros.'
+        };
+    }
+
+    // Progressão segura: 2 sessões seguidas ≥85% (mesma habilidade) => subir 1 nível
+    if (lastAcc!=null && prevAcc!=null && lastAcc >= 85 && prevAcc >= 85){
+        const nextLevel = (function(lvl){
+            const s = String(lvl||'medium');
+            if (s==='easy') return 'medium';
+            if (s==='medium') return 'advanced';
+            return 'advanced';
+        })(summary.level);
+        if (nextLevel !== summary.level){
+            return {
+                kind:'progress',
+                overrideLevel: nextLevel,
+                autoApply: true,
+                note:'Progressão: 2 sessões fortes seguidas.'
+            };
+        }
+    }
+
+    // Revisão inteligente: se há erros recorrentes, reservar parte da próxima sessão
+    if ((summary.errorsTop||[]).length >= 2){
+        return {
+            kind:'review',
+            totalQuestions: 20,
+            reviewPct: 0.30,
+            guided: true,
+            note:'Revisão: priorizar erros recorrentes.'
+        };
+    }
+
+    return {kind:'none', note:'Sem intervenção.', autoApply:false};
+}
+
+/** Ativação imediata (anti-frustração): encurta a sessão em andamento */
+function petMaybeActivateShortSession(){
+    try{
+        if (gameState.isRapidMode) return;
+        const attempts = (gameState.acertos||0)+(gameState.erros||0);
+        if (attempts < 8) return;
+        const acc = attempts>0 ? (gameState.acertos/attempts)*100 : 100;
+        if (acc >= 70) return;
+        if ((gameState.erros||0) < 6) return;
+        if (!Number.isFinite(gameState.totalQuestions) || gameState.totalQuestions === Infinity) return;
+        if (gameState.totalQuestions <= 10) return;
+
+        gameState.totalQuestions = 10;
+        showFeedbackMessage('Sessão curta de recuperação ativada ✅', 'info', 2500);
+        gameState.__petInterventionApplied = 'SHORT_RECOVERY_10Q';
+    }catch(_){}
+}
+/* ================== /PET Intervenções ================== */
+
+
 function loadStudentProfile() {
     try {
         const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
@@ -394,6 +857,13 @@ function ensureLearningMapUI() {
         if (header && header.parentNode) {
             header.parentNode.insertBefore(card, header.nextSibling);
         } else {
+        gameState.wrongStreak = (gameState.wrongStreak || 0) + 1;
+        if (gameState.wrongStreak >= 3) {
+            // v19.1 — anti-frustração: próxima(s) questão(ões) mais fáceis sem avisar
+            gameState.forceEasy = 2;
+            gameState.wrongStreak = 0;
+        try{ gameState.__tagStreak = {}; gameState.__inMicro = false; }catch(_){ }
+        }
             screen.appendChild(card);
         }
     }
@@ -458,7 +928,7 @@ function renderLearningMapPreview(operation) {
 }
 
 
-// --- UI: botão Perfil do aluno (opcional) ---
+// --- UI: botão Perfil do estudante (opcional) ---
 function ensureProfileUI() {
     if (document.getElementById('btn-student-profile')) return;
 
@@ -488,7 +958,7 @@ function ensureProfileUI() {
 
         <div class="teacher-panel-section">
           <label class="tp-label">Nome (ou apelido)</label>
-          <input id="profile-name" class="tp-input" type="text" maxlength="50" placeholder="Ex.: Ana, João, Aluno 12">
+          <input id="profile-name" class="tp-input" type="text" maxlength="50" placeholder="Ex.: Ana, João, Estudante 12">
           <label class="tp-label">Turma</label>
           <input id="profile-turma" class="tp-input" type="text" maxlength="30" placeholder="Ex.: 701, 8ºA">
           <label class="tp-label">Escola</label>
@@ -663,7 +1133,7 @@ function renderRanking() {
         const dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
         const whoParts = [];
-        if (e.studentName) whoParts.push(`Aluno: ${e.studentName}`);
+        if (e.studentName) whoParts.push(`Estudante: ${e.studentName}`);
         if (e.studentTurma) whoParts.push(`Turma: ${e.studentTurma}`);
         if (e.studentEscola) whoParts.push(`Escola: ${e.studentEscola}`);
         const whoStr = whoParts.length ? (whoParts.join(' • ') + ' • ') : '';
@@ -1051,11 +1521,31 @@ function buildQuestionFromError(err) {
     let questionStr = '';
     let voiceQ = '';
     switch (op) {
-        case 'addition':
+case 'addition':
+            // v19.2 — usa pool fixo (50) por nível
+            const __pAdd = nextFromAddSubPool('addition', gameState.currentLevel);
+            if (__pAdd) {
+                num1 = __pAdd[0]; num2 = __pAdd[1];
+                answer = num1 + num2;
+                questionString = `${num1} + ${num2}`;
+                questionSpeak = `${num1} mais ${num2}`;
+                break;
+            }
+
             questionStr = `${num1} + ${num2} = ?`;
             voiceQ = `Qual é o resultado de ${num1} mais ${num2}?`;
             break;
-        case 'subtraction':
+case 'subtraction':
+            // v19.2 — usa pool fixo (50) por nível
+            const __pSub = nextFromAddSubPool('subtraction', gameState.currentLevel);
+            if (__pSub) {
+                num1 = __pSub[0]; num2 = __pSub[1];
+                answer = num1 - num2;
+                questionString = `${num1} - ${num2}`;
+                questionSpeak = `${num1} menos ${num2}`;
+                break;
+            }
+
             questionStr = `${num1} − ${num2} = ?`;
             voiceQ = `Qual é o resultado de ${num1} menos ${num2}?`;
             break;
@@ -1091,7 +1581,8 @@ function buildQuestionFromError(err) {
         voiceOptions: opts,
         operacao: op,
         num1: num1,
-        num2: num2
+        num2: num2,
+        reviewKey: (gameState.multiplication && gameState.multiplication.__reviewKey) ? gameState.multiplication.__reviewKey : null
     };
 }
 
@@ -1122,9 +1613,20 @@ function startErrorTraining() {
     gameState.questionNumber = 0;
     gameState.score = 0;
     gameState.acertos = 0;
+    gameState.answerTimes = [];
+    gameState.fastAnswers = 0;
+    gameState.suspectSession = false;
+    gameState.__inMicro = false;
+    gameState.__tagStreak = {};
+
     gameState.erros = 0;
     gameState.sessionStartTs = Date.now();
-    gameState.isGameActive = true;
+    
+    // v19.2 — pools fixos para Adição/Subtração
+    if (operation === 'addition' || operation === 'subtraction') {
+        ensureAddSubPool(operation, level);
+    }
+gameState.isGameActive = true;
     gameState.isTrainingErrors = false;
     gameState.attemptsThisQuestion = 0;
     if (btnShowAnswer) btnShowAnswer.disabled = false;
@@ -1168,6 +1670,7 @@ function nextTrainingQuestion() {
 
 function endTraining() {
     gameState.isGameActive = false;
+    gameState.__inMicro = false;
     gameState.isTrainingErrors = false;
 
     // Reabilita botões
@@ -1175,6 +1678,9 @@ function endTraining() {
     if (btnExtendTime) btnExtendTime.disabled = false;
 
     showFeedbackMessage('Treinamento concluído! 🎯', 'success', 2500);
+
+    // XP Ganho (apenas para histórico)
+    const xpGained = gameState.acertos * 2 - gameState.erros * 2;
 
 
 // 4. Registrar sessão para Relatório/Painel do Professor (offline)
@@ -1191,6 +1697,14 @@ try {
     appendSession({
         schemaVersion: '1.0',
         ts: Date.now(),
+        date: petIsoDate(Date.now()),
+        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
+        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
+        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
+        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
+        suspect: !!gameState.suspectSession,
+        interventionApplied: (gameState.__petInterventionApplied || null),
+
         operation: gameState.currentOperation,
         level: gameState.currentLevel,
         mode: gameState.isRapidMode ? 'rapido' : 'estudo',
@@ -1216,6 +1730,31 @@ try {
             trailMax: Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : null
         } : null
     });
+    // PET: decidir próximo plano (reduzir abandono / acelerar domínio)
+    try{
+        const skillKey = (gameState.currentSkillKey || petSkillKeyFromState());
+        const attempts = (gameState.acertos||0)+(gameState.erros||0);
+        const accuracy = attempts>0 ? Math.round(((gameState.acertos||0)/attempts)*1000)/10 : 0;
+        const avgSec = petAvgSec();
+        const errorsTop = petErrorsTopThisSession(5);
+        const plan = petDecideNextPlan({
+            skillKey,
+            accuracy,
+            errors: (gameState.erros||0),
+            attempts,
+            suspect: !!gameState.suspectSession,
+            avgSec,
+            errorsTop,
+            op: gameState.currentOperation,
+            level: gameState.currentLevel
+        });
+        gameState.__petNextPlan = plan;
+        // só grava plano se for aplicável
+        if (plan && plan.kind && plan.kind !== 'none'){
+            petSetPlan(skillKey, plan);
+        }
+    }catch(_){}
+
 } catch (e) {
     console.warn('Falha ao registrar sessão:', e);
 }
@@ -1229,6 +1768,463 @@ try {
 
 function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// --- v19.9 — BLUEPRINT + POOLS FIXOS (Base turma fraca) ---
+// Objetivo: ter (1) pool fixo de 50 por nível e (2) gerador por regras seguindo as proporções.
+// Observação: nível usa 'easy' | 'medium' | 'advanced' internamente; aceitamos 'hard' como sinônimo de 'advanced'.
+
+function normLevelKey(lvl){
+    if (!lvl) return 'medium';
+    const s = String(lvl).toLowerCase();
+    // aceita variações PT/EN com e sem acento
+    if (s === 'hard' || s === 'difficult' || s === 'difícil' || s === 'dificil' || s === 'advanced') return 'advanced';
+    if (s === 'easy' || s === 'facil' || s === 'fácil') return 'easy';
+    if (s === 'medium' || s === 'medio' || s === 'médio') return 'medium';
+    return s;
+}
+
+const PET_BLUEPRINT = {
+    add: {
+        easy:   { max: 20,  carryPct: 0.00, buckets: [
+            { key:'complete10', n:15 }, { key:'doubles', n:10 }, { key:'plus123', n:10 }, { key:'to20', n:10 }, { key:'mix', n:5 }
+        ]},
+        medium: { max: 100, carryPct: 0.35, buckets: [
+            { key:'plusTens', n:10 }, { key:'to100', n:8 }, { key:'comp', n:7 }, { key:'mixNoCarry', n:7 }, // 32 sem vai-um
+            { key:'carryEasy', n:8 }, { key:'carry2d', n:6 }, { key:'carryTensAdj', n:4 }                 // 18 com vai-um
+        ]},
+        advanced:{ max: 200, carryPct: 0.70, buckets: [
+            { key:'carry2d1d', n:10 }, { key:'carry2d2d', n:15 }, { key:'nearMark', n:6 }, { key:'compCarry', n:4 }, // 35
+            { key:'tens', n:6 }, { key:'to200', n:5 }, { key:'mixNoCarry', n:4 }                                      // 15
+        ]}
+    },
+    sub: {
+        easy:   { max: 20,  borrowPct: 0.00, buckets: [
+            { key:'minus123', n:12 }, { key:'to10', n:15 }, { key:'smallDiff', n:8 }, { key:'complete', n:10 }, { key:'mix', n:5 }
+        ]},
+        medium: { max: 100, borrowPct: 0.35, buckets: [
+            { key:'minusTens', n:10 }, { key:'minusUnits', n:8 }, { key:'from100', n:7 }, { key:'mixNoBorrow', n:7 }, // 32
+            { key:'borrow1d', n:8 }, { key:'borrow2d', n:8 }, { key:'nearMark', n:2 }                                  // 18
+        ]},
+        advanced:{ max: 200, borrowPct: 0.70, buckets: [
+            { key:'borrow2d1d', n:10 }, { key:'borrow2d2d', n:15 }, { key:'nearMark', n:6 }, { key:'comp', n:4 }, // 35
+            { key:'minusTens', n:6 }, { key:'from200', n:5 }, { key:'mixNoBorrow', n:4 }                              // 15
+        ]}
+    },
+    mult: {
+        easy:    { tabMin:1, tabMax:5, weights: {1:0.15,2:0.20,3:0.22,4:0.22,5:0.21} },
+        medium:  { tabMin:6, tabMax:10, weights: {10:0.12,9:0.20,8:0.20,7:0.16,6:0.16,'mix':0.16} },
+        advanced:{ tabMin:11, tabMax:20, weights: {11:0.12,12:0.12,13:0.10,14:0.10,15:0.08,16:0.08,17:0.08,18:0.08,19:0.08,20:0.08,'mix':0.08} }
+    }
+};
+
+// Estado dos pools fixos
+if (!gameState.pools) {
+    gameState.pools = {
+        cursor: { addition:{easy:0,medium:0,advanced:0}, subtraction:{easy:0,medium:0,advanced:0}, multiplication:{easy:0,medium:0,advanced:0} },
+        fixed:  { addition:{easy:[],medium:[],advanced:[]}, subtraction:{easy:[],medium:[],advanced:[]}, multiplication:{easy:[],medium:[],advanced:[]} }
+    };
+}
+
+function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+// --- Geradores por bucket (adição) ---
+function genAdd(levelKey, bucketKey){
+    const cfg = PET_BLUEPRINT.add[levelKey];
+    const max = cfg.max;
+
+    let a=0,b=0;
+
+    const pick = (min,maxi)=>randomInt(min,maxi);
+
+    if (levelKey === 'easy'){
+        // tudo <=20, sem vai-um
+        if (bucketKey==='complete10'){
+            const au = pick(0,9);
+            const bu = 10-au;
+            a = au; b = bu;
+            if (Math.random()<0.4){ a = pick(0,9); b = 10-a; } // variação
+        } else if (bucketKey==='doubles'){
+            const x = pick(1,10);
+            a = x; b = (Math.random()<0.5)? x : Math.max(0, Math.min(20, x + (Math.random()<0.5?1:-1)));
+        } else if (bucketKey==='plus123'){
+            a = pick(0,20);
+            b = randChoice([1,2,3]);
+            if (a+b>20) a = 20-b;
+        } else if (bucketKey==='to20'){
+            const target = 20;
+            a = pick(0,20);
+            b = target - a;
+            if (b<0){ b = pick(0,20-a); }
+        } else { // mix
+            a = pick(0,20);
+            b = pick(0,20);
+            if (a+b>20){ a = pick(0,20); b = pick(0,20-a); }
+        }
+        // garante sem vai-um (unidades)
+        if ((a%10)+(b%10) >= 10){
+            // ajusta b pra evitar carry
+            const au=a%10;
+            b = Math.min(b, 9-au);
+        }
+        return [a,b];
+    }
+
+    // medium/advanced
+    const limit = max;
+    const makeNoCarry2d = ()=>{
+        for (let i=0;i<80;i++){
+            const at = pick(0, Math.floor(limit/10));
+            const bt = pick(0, Math.floor(limit/10));
+            const au = pick(0,9);
+            const bu = pick(0,9-au); // sem vai-um
+            a = at*10+au;
+            b = bt*10+bu;
+            if (a<=limit && b<=limit && a+b<=limit) return [a,b];
+        }
+        a=pick(0,limit); b=pick(0,limit-a); return [a,b];
+    };
+    const makeCarry = (twoDigitsB=true)=>{
+        for (let i=0;i<120;i++){
+            const at = pick(0, Math.floor(limit/10));
+            const bt = pick(0, Math.floor(limit/10));
+            const au = pick(0,9);
+            const bu = pick(Math.max(10-au,0),9); // força carry nas unidades
+            a = at*10+au;
+            if (twoDigitsB){
+                const btu = pick(0, Math.floor(limit/10));
+                b = btu*10 + bu;
+            } else {
+                b = bu; // 1 dígito
+            }
+            if (a<=limit && b<=limit && a+b<=limit) return [a,b];
+        }
+        // fallback
+        return makeNoCarry2d();
+    };
+
+    if (levelKey==='medium'){
+        if (bucketKey==='plusTens'){
+            a = pick(0,100);
+            b = randChoice([10,20,30,40]);
+            if (a+b>100) a = 100-b;
+            return [a,b];
+        } else if (bucketKey==='to100'){
+            a = pick(0,100);
+            b = 100-a;
+            if (b<0){ b = pick(0,100-a); }
+            return [a,b];
+        } else if (bucketKey==='comp'){
+            // compensação: 49+6 => 50+5
+            a = randChoice([29,39,49,59,69,79,89,99]);
+            b = pick(1,9);
+            if (a+b>100){ a -= 10; }
+            return [a,b];
+        } else if (bucketKey==='mixNoCarry'){
+            return makeNoCarry2d();
+        } else if (bucketKey==='carryEasy'){
+            // 2d + 1d com carry
+            return makeCarry(false);
+        } else if (bucketKey==='carry2d'){
+            return makeCarry(true);
+        } else if (bucketKey==='carryTensAdj'){
+            a = randChoice([59,69,79,89,99]);
+            b = randChoice([11,12,13,14,15,16,17,18,19]);
+            if (a+b>100){ a -= 10; }
+            // garante carry
+            if ((a%10)+(b%10) < 10) b += (10-((a%10)+(b%10)));
+            if (a+b>100) b -= 10;
+            return [a,b];
+        }
+        return makeNoCarry2d();
+    }
+
+    // advanced
+    if (bucketKey==='carry2d1d'){
+        return makeCarry(false);
+    } else if (bucketKey==='carry2d2d'){
+        return makeCarry(true);
+    } else if (bucketKey==='nearMark'){
+        a = randChoice([98,99,149,150,199]);
+        b = pick(1,9);
+        if (a+b>200) a -= 10;
+        // força carry em parte
+        return [a,b];
+    } else if (bucketKey==='compCarry'){
+        a = randChoice([79,89,99,109,119,129,139,149,159,169,179,189,199]);
+        b = randChoice([12,13,14,15,16,17,18,19]);
+        if (a+b>200) a -= 10;
+        if ((a%10)+(b%10) < 10) b += (10-((a%10)+(b%10)));
+        if (a+b>200) b -= 10;
+        return [a,b];
+    } else if (bucketKey==='tens'){
+        a = randChoice([100,110,120,130,140,150,160,170,180,190]);
+        b = randChoice([10,20,30,40,50]);
+        if (a+b>200) b = 200-a;
+        return [a,b];
+    } else if (bucketKey==='to200'){
+        a = pick(0,200);
+        b = 200-a;
+        if (b<0) b = pick(0,200-a);
+        return [a,b];
+    } else if (bucketKey==='mixNoCarry'){
+        return makeNoCarry2d();
+    }
+    return makeCarry(true);
+}
+
+// --- Geradores por bucket (subtração) ---
+function genSub(levelKey, bucketKey){
+    const cfg = PET_BLUEPRINT.sub[levelKey];
+    const max = cfg.max;
+
+    let a=0,b=0;
+    const pick=(min,maxi)=>randomInt(min,maxi);
+
+    if (levelKey==='easy'){
+        if (bucketKey==='minus123'){
+            a = pick(0,20);
+            b = randChoice([1,2,3]);
+            if (a-b<0) a = b;
+        } else if (bucketKey==='to10'){
+            a = pick(0,20);
+            b = pick(0,10);
+            if (a-b<0) a = b;
+        } else if (bucketKey==='smallDiff'){
+            b = pick(0,20);
+            a = Math.min(20, b + pick(0,3));
+        } else if (bucketKey==='complete'){
+            a = 20;
+            b = pick(0,20);
+        } else { // mix
+            a = pick(0,20);
+            b = pick(0,a);
+        }
+        // sem empréstimo
+        if ((a%10) < (b%10)){
+            b = (Math.floor(b/10)*10) + pick(0, a%10);
+        }
+        return [a,b];
+    }
+
+    const limit=max;
+    const makeNoBorrow2d=()=>{
+        for (let i=0;i<120;i++){
+            const at = pick(0, Math.floor(limit/10));
+            const bt = pick(0, at);
+            const au = pick(0,9);
+            const bu = pick(0, au); // garante sem empréstimo
+            a = at*10+au;
+            b = bt*10+bu;
+            if (a<=limit && b<=a) return [a,b];
+        }
+        a=pick(0,limit); b=pick(0,a); return [a,b];
+    };
+    const makeBorrow=(twoDigitsB=true)=>{
+        for (let i=0;i<160;i++){
+            const at = pick(1, Math.floor(limit/10)); // precisa ter dezena pra emprestar
+            const bt = pick(0, at);
+            const au = pick(0,9);
+            const bu = pick(au+1,9); // força empréstimo
+            a = at*10 + au;
+            if (twoDigitsB){
+                const btu = pick(0, bt);
+                b = btu*10 + bu;
+            } else {
+                b = bu;
+            }
+            if (a<=limit && b<=a) return [a,b];
+        }
+        return makeNoBorrow2d();
+    };
+
+    if (levelKey==='medium'){
+        if (bucketKey==='minusTens'){
+            a = randChoice([40,50,60,70,80,90,100]);
+            b = randChoice([10,20,30,40,50]);
+            if (b>a) b = 10;
+            return [a,b];
+        } else if (bucketKey==='minusUnits'){
+            a = pick(10,100);
+            b = pick(1,9);
+            if (a-b<0) a = b+10;
+            return [a,b];
+        } else if (bucketKey==='from100'){
+            a = 100;
+            b = pick(0,100);
+            return [a,b];
+        } else if (bucketKey==='mixNoBorrow'){
+            return makeNoBorrow2d();
+        } else if (bucketKey==='borrow1d'){
+            return makeBorrow(false);
+        } else if (bucketKey==='borrow2d'){
+            return makeBorrow(true);
+        } else if (bucketKey==='nearMark'){
+            a = randChoice([70,80,90,100]);
+            b = randChoice([48,59,67,78,89]);
+            if (b>a) b = a-1;
+            // garante empréstimo quando possível
+            if ((a%10) >= (b%10)) b = (Math.floor(b/10)*10) + ((a%10)+1);
+            if (b>a) b = a-1;
+            return [a,b];
+        }
+        return makeNoBorrow2d();
+    }
+
+    // advanced
+    if (bucketKey==='borrow2d1d'){
+        return makeBorrow(false);
+    } else if (bucketKey==='borrow2d2d'){
+        return makeBorrow(true);
+    } else if (bucketKey==='nearMark'){
+        a = randChoice([100,150,200]);
+        b = randChoice([67,98,136,149,187]);
+        if (b>a) b = a-1;
+        if ((a%10) >= (b%10)) b = (Math.floor(b/10)*10) + ((a%10)+1);
+        if (b>a) b = a-1;
+        return [a,b];
+    } else if (bucketKey==='comp'){
+        // compensação: 82-19 = 82-20+1 (mas aqui só gera o par)
+        a = randChoice([82,92,102,112,122,132,142,152,162,172,182,192]);
+        b = randChoice([19,29,39,49,59,69,79,89,99]);
+        if (b>a) b = a-1;
+        // força empréstimo
+        if ((a%10) >= (b%10)) b = (Math.floor(b/10)*10) + ((a%10)+1);
+        if (b>a) b = a-1;
+        return [a,b];
+    } else if (bucketKey==='minusTens'){
+        a = randChoice([120,130,140,150,160,170,180,190,200]);
+        b = randChoice([10,20,30,40,50,60,70,80,90]);
+        if (b>a) b = 10;
+        return [a,b];
+    } else if (bucketKey==='from200'){
+        a = 200;
+        b = pick(0,200);
+        return [a,b];
+    } else if (bucketKey==='mixNoBorrow'){
+        return makeNoBorrow2d();
+    }
+    return makeBorrow(true);
+}
+
+// --- Multiplicação: gerador por pesos (nível) ---
+function genMultPair(levelKey){
+    const cfg = PET_BLUEPRINT.mult[levelKey];
+    // define multiplicador dentro da faixa atual (config do app)
+    const multMin = Number.isInteger(gameState.multiplication?.multMin) ? gameState.multiplication.multMin : 0;
+    const multMax = Number.isInteger(gameState.multiplication?.multMax) ? gameState.multiplication.multMax : 20;
+
+    const pickM = ()=>randomInt(multMin, multMax);
+
+    if (levelKey === 'easy'){
+        // Escolhe tabuada 0-5 com pesos
+        const r=Math.random();
+        let acc=0;
+        const order=[0,1,2,3,4,5];
+        for (const t of order){
+            acc += (cfg.weights[t]||0);
+            if (r<=acc) return [t, pickM()];
+        }
+        return [randChoice(order), pickM()];
+    }
+
+    const r=Math.random();
+    let acc=0;
+    const order = (levelKey==='medium') ? [10,9,8,7,6,'mix'] : [11,12,13,14,15,16,17,18,19,20,'mix'];
+    for (const k of order){
+        acc += (cfg.weights[k]||0);
+        if (r<=acc){
+            if (k==='mix'){
+                // pega qualquer tabuada no range
+                return [randomInt(cfg.tabMin, cfg.tabMax), pickM()];
+            }
+            return [k, pickM()];
+        }
+    }
+    return [randomInt(cfg.tabMin,cfg.tabMax), pickM()];
+}
+
+// --- Construção de pools fixos (50) a partir do blueprint ---
+function buildFixedPoolAdd(levelKey){
+    const buckets = PET_BLUEPRINT.add[levelKey].buckets;
+    const out=[];
+    buckets.forEach(b=>{
+        for (let i=0;i<b.n;i++){
+            const [a,bv]=genAdd(levelKey,b.key);
+            out.push([a,bv]);
+        }
+    });
+    return shuffleArray(out).slice(0,50);
+}
+function buildFixedPoolSub(levelKey){
+    const buckets = PET_BLUEPRINT.sub[levelKey].buckets;
+    const out=[];
+    buckets.forEach(b=>{
+        for (let i=0;i<b.n;i++){
+            const [a,bv]=genSub(levelKey,b.key);
+            out.push([a,bv]);
+        }
+    });
+    return shuffleArray(out).slice(0,50);
+}
+function buildFixedPoolMult(levelKey){
+    const out=[];
+    // 50 pares seguindo pesos (com mistura)
+    for (let i=0;i<50;i++){
+        out.push(genMultPair(levelKey));
+    }
+    return shuffleArray(out);
+}
+
+function ensureFixedPools(){
+    ['easy','medium','advanced'].forEach(lvl=>{
+        if (!Array.isArray(gameState.pools.fixed.addition[lvl]) || gameState.pools.fixed.addition[lvl].length!==50){
+            gameState.pools.fixed.addition[lvl]=buildFixedPoolAdd(lvl);
+            gameState.pools.cursor.addition[lvl]=0;
+        }
+        if (!Array.isArray(gameState.pools.fixed.subtraction[lvl]) || gameState.pools.fixed.subtraction[lvl].length!==50){
+            gameState.pools.fixed.subtraction[lvl]=buildFixedPoolSub(lvl);
+            gameState.pools.cursor.subtraction[lvl]=0;
+        }
+        if (!Array.isArray(gameState.pools.fixed.multiplication[lvl]) || gameState.pools.fixed.multiplication[lvl].length!==50){
+            gameState.pools.fixed.multiplication[lvl]=buildFixedPoolMult(lvl);
+            gameState.pools.cursor.multiplication[lvl]=0;
+        }
+    });
+}
+
+function nextFromFixedPool(opKey, levelKey){
+    ensureFixedPools();
+    const lvl = normLevelKey(levelKey);
+    const pool = gameState.pools.fixed[opKey]?.[lvl] || [];
+    let cur = gameState.pools.cursor[opKey]?.[lvl] || 0;
+    if (cur >= pool.length) return null;
+    const item = pool[cur];
+    gameState.pools.cursor[opKey][lvl] = cur + 1;
+    return item;
+}
+
+function maybeRebuildFixedPool(opKey, levelKey){
+    const lvl = normLevelKey(levelKey);
+    ensureFixedPools();
+    const cur = gameState.pools.cursor[opKey][lvl];
+    if (cur >= 50){
+        // recompõe novo pool para evitar decorar
+        if (opKey==='addition') gameState.pools.fixed.addition[lvl]=buildFixedPoolAdd(lvl);
+        if (opKey==='subtraction') gameState.pools.fixed.subtraction[lvl]=buildFixedPoolSub(lvl);
+        if (opKey==='multiplication') gameState.pools.fixed.multiplication[lvl]=buildFixedPoolMult(lvl);
+        gameState.pools.cursor[opKey][lvl]=0;
+    }
+}
+
+function pickBucketKey(buckets){
+    const total = buckets.reduce((s,b)=>s+(b.n||0),0);
+    let r = Math.random()*total;
+    for (const b of buckets){
+        r -= (b.n||0);
+        if (r<=0) return b.key;
+    }
+    return buckets[0]?.key || 'mix';
 }
 
 
@@ -1257,20 +2253,33 @@ function rangeInclusive(min, max) {
 
 
 
-// Mapeia nível → faixa de tabuadas (Multiplicação)
+// Mapeia 
+// Normaliza nomes de nível vindos da UI/estado (ex.: 'hard' -> 'advanced')
+function normalizeLevelKey(level) {
+    if (!level) return 'medium';
+    const l = String(level).toLowerCase();
+    if (l === 'hard' || l === 'difficult' || l === 'difícil' || l === 'dificil') return 'advanced';
+    if (l === 'easy' || l === 'facil' || l === 'fácil') return 'easy';
+    if (l === 'medium' || l === 'medio' || l === 'médio') return 'medium';
+    if (l === 'advanced') return 'advanced';
+    return l;
+}
+
+// nível → faixa de tabuadas (Multiplicação)
 function getTabuadaRangeByLevel(level) {
-    switch (level) {
+    level = normalizeLevelKey(level);
+switch (level) {
         case 'easy':
-            // Fácil: tabuadas 0–5, multiplicadores 0–10
-            return { min: 0, max: 5, multMin: 0, multMax: 10, label: 'Fácil (0–5 | ×0–10)' };
+            // Fácil: tabuadas 1–5, multiplicadores 1–10
+            return { min: 1, max: 5, multMin: 1, multMax: 10, label: 'Fácil (1–5 | ×1–10)' };
         case 'medium':
-            // Médio: tabuadas 6–10, multiplicadores 0–10
-            return { min: 6, max: 10, multMin: 0, multMax: 10, label: 'Médio (6–10 | ×0–10)' };
+            // Médio: tabuadas 6–10, multiplicadores 1–10
+            return { min: 6, max: 10, multMin: 1, multMax: 10, label: 'Médio (6–10 | ×1–10)' };
         case 'advanced':
-            // Difícil: tabuadas 11–20, multiplicadores 0–20
-            return { min: 11, max: 20, multMin: 0, multMax: 20, label: 'Difícil (11–20 | ×0–20)' };
+            // Avançado: tabuadas 11–20, multiplicadores 1–20
+            return { min: 11, max: 20, multMin: 1, multMax: 20, label: 'Avançado (11–20 | ×1–20)' };
         default:
-            return { min: 0, max: 20, multMin: 0, multMax: 20, label: 'Completo (0–20 | ×0–20)' };
+            return { min: 1, max: 5, multMin: 1, multMax: 10, label: 'Fácil (1–5 | ×1–10)' };
     }
 }
 
@@ -1295,8 +2304,8 @@ function loadMultiplicationConfig() {
         // trilha (pares)
         const tabMin = Number.isInteger(gameState.multiplication.trailMin) ? gameState.multiplication.trailMin : 0;
         const tabMax = Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : 20;
-        const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 0;
-        const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 20;
+        const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 1;
+        const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 10;
         const expectedLen = Math.max(0, (tabMax - tabMin + 1)) * Math.max(0, (multMax - multMin + 1));
 
         if (Array.isArray(cfg.trailPairs) && cfg.trailPairs.length === expectedLen) {
@@ -1395,8 +2404,8 @@ function getNextTrailPair() {
         // completou o ciclo → nova ordem aleatória
         const tabMin = Number.isInteger(gameState.multiplication.trailMin) ? gameState.multiplication.trailMin : 0;
         const tabMax = Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : 20;
-        const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 0;
-        const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 20;
+        const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 1;
+        const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 10;
         gameState.multiplication.trailPairs = shuffleArray(buildTrailPairs(tabMin, tabMax, multMin, multMax));
         gameState.multiplication.trailPairIndex = 0;
     }
@@ -1415,15 +2424,15 @@ function getTrailPairsBankSize(tabMin, tabMax, multMin, multMax) {
 
 // Modo direto: multiplicadores embaralhados para a tabuada escolhida
 function prepareRoundMultipliersForCurrentLevel() {
-    const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 20;
-    const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 0;
+    const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 10;
+    const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 1;
     gameState.multiplication.roundMultipliers = shuffleArray(rangeInclusive(multMin, multMax));
     gameState.multiplication.roundPos = 0;
 }
 
 function getNextRoundMultiplier() {
-    const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 20;
-    const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 0;
+    const multMax = Number.isInteger(gameState.multiplication.multMax) ? gameState.multiplication.multMax : 10;
+    const multMin = Number.isInteger(gameState.multiplication.multMin) ? gameState.multiplication.multMin : 1;
     const expectedLen = (multMax - multMin + 1);
 
     if (!Array.isArray(gameState.multiplication.roundMultipliers) || gameState.multiplication.roundMultipliers.length !== expectedLen) {
@@ -1548,18 +2557,41 @@ function ensureMultiplicationModal() {
             b.className = 'mm-grid-btn';
             b.textContent = String(i);
             b.addEventListener('click', () => {
+                // 🔒 Modo direto (Escolher tabuada) é estrito:
+                // - fixa a tabuada escolhida
+                // - usa multiplicadores 1–10
+                // - força o nível coerente com a tabuada (evita “vazar” para 6–10/11–20)
+                const levelForTabuada = (n) => (n <= 5 ? 'easy' : (n <= 10 ? 'medium' : 'advanced'));
+                const lvl = levelForTabuada(i);
+
                 gameState.multiplication.mode = 'direct';
                 gameState.multiplication.tabuada = i;
-                // persiste a faixa atual também
-                gameState.multiplication.trailMin = r.min;
-                gameState.multiplication.trailMax = r.max;
-                gameState.multiplication.trailRangeKey = `${r.min}-${r.max}|${r.multMin}-${r.multMax}`;
-                gameState.multiplication.multMin = r.multMin;
-                gameState.multiplication.multMax = r.multMax;
+                gameState.multiplication.directLock = true;
+                gameState.multiplication.lockTabuada = i;
+                gameState.multiplication.directMultipliers = [];
+                gameState.multiplication.pendingLevel = lvl;
+                gameState.currentLevel = lvl;
+
+                // multiplicadores fixos por tabuada (direto):
+                // - 0–10: x 1..10
+                // - 11–20: x 1..20
+                const maxMul = (i >= 11 ? 20 : 10);
+                gameState.multiplication.multMin = 1;
+                gameState.multiplication.multMax = maxMul;
+                gameState.multiplication.roundMultipliers = null;
+                gameState.multiplication.roundPos = 0;
+
+                // faixa de exibição coerente com o nível calculado
+                const rr = getTabuadaRangeByLevel(lvl);
+                gameState.multiplication.trailMin = rr.min;
+                gameState.multiplication.trailMax = rr.max;
+                gameState.multiplication.trailRangeKey = `${rr.min}-${rr.max}|1-${gameState.multiplication.multMax}`;
+
                 saveMultiplicationConfig();
                 close();
-                startGame('multiplication', gameState.multiplication.pendingLevel || gameState.currentLevel || 'medium');
+                startGame('multiplication', lvl);
             });
+            b.addEventListener('pointerup', (ev) => { ev.preventDefault(); ev.stopPropagation(); b.click(); });
             grid.appendChild(b);
         }
     };
@@ -1573,37 +2605,54 @@ function ensureMultiplicationModal() {
         if (e.target === overlay) close();
     });
 
-    // Botões principais
-    overlay.querySelector('[data-mm="trail"]').addEventListener('click', () => {
+
+    // Clique explícito (evita “tocar em um e executar o outro” em alguns celulares)
+    const btnTrail = overlay.querySelector('[data-mm="trail"]');
+    const btnDirect = overlay.querySelector('[data-mm="direct"]');
+
+    const handleTrail = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         const r = getCurrentRange();
         gameState.multiplication.mode = 'trail';
-        // define a faixa do nível e cria ordem aleatória só dentro dela
-        // prepara a trilha com TODAS as contas da faixa (sem repetir até completar)
+        gameState.multiplication.directLock = false;
+        gameState.multiplication.lockTabuada = null;
+        gameState.multiplication.directMultipliers = [];
         ensureTrailPairs(r.min, r.max, r.multMin, r.multMax);
         saveMultiplicationConfig();
         close();
         startGame('multiplication', gameState.multiplication.pendingLevel || gameState.currentLevel || 'medium');
-    });
+    };
 
-    overlay.querySelector('[data-mm="direct"]').addEventListener('click', () => {
-        overlay.querySelector('.mm-direct').classList.remove('hidden');
+    const handleDirect = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const directBox = overlay.querySelector('.mm-direct');
+        if (directBox) directBox.classList.remove('hidden');
         renderRangeTexts();
         renderTabuadaGrid();
-    });
+    };
+
+    const bindClick = (btn, handler) => {
+        if (!btn) return;
+        btn.addEventListener('click', handler);
+        btn.addEventListener('pointerup', (ev) => { ev.preventDefault(); ev.stopPropagation(); handler(ev); });
+        btn.addEventListener('touchend', (ev) => { ev.preventDefault(); ev.stopPropagation(); handler(ev); }, { passive: false });
+    };
+
+    bindClick(btnTrail, handleTrail);
+    bindClick(btnDirect, handleDirect);
+
+    // Botões principais
 }
 
 function openMultiplicationConfig(level) {
     ensureMultiplicationModal();
     gameState.multiplication.pendingLevel = level;
 
-    // Ajusta a faixa de tabuadas conforme o nível selecionado
+    // Ajusta a faixa do nível apenas para exibição (não aplica na config ainda)
     const r = getTabuadaRangeByLevel(level);
     gameState.multiplication.trailMin = r.min;
     gameState.multiplication.trailMax = r.max;
-    gameState.multiplication.trailRangeKey = `${r.min}-${r.max}|${r.multMin}-${r.multMax}`;
-    gameState.multiplication.multMin = r.multMin;
-    gameState.multiplication.multMax = r.multMax;
-    saveMultiplicationConfig();
+    // A escolha (trilha vs tabuada) define o resto.
 
     const overlay = document.getElementById('mm-modal-overlay');
     if (!overlay) return;
@@ -1624,6 +2673,126 @@ function openMultiplicationConfig(level) {
  * @param {string} operation - A operação matemática.
  * @returns {object} { question: string, answer: number, options: number[] }
  */
+
+/**
+ * v19.2 — Gera pools fixos (50) de Adição/Subtração por nível para reduzir repetição e dar previsibilidade.
+ * Mantém restrições mais leves para turma fraca (Base 6º–7º: easy/medium <= 20).
+ */
+function buildAddSubPool(operation, level, size = 50) {
+    const pairs = [];
+    const seen = new Set();
+
+    const isBaseSafe = (typeof isCampaignBase === 'function') && isCampaignBase() && (level === 'easy' || level === 'medium');
+    const maxBase = 20;
+
+    // Faixas por nível (modo livre e reforço)
+    const ranges = {
+        easy:   { min: 0,  max: isBaseSafe ? maxBase : 30 },
+        medium: { min: 0,  max: isBaseSafe ? maxBase : 120 },
+        advanced:{ min: 0, max: 500 }
+    };
+    const r = ranges[level] || ranges.medium;
+
+    let guard = 0;
+    while (pairs.length < size && guard < size * 80) {
+        guard++;
+
+        let a, b;
+        if (operation === 'addition') {
+            // easy: parte sem vai-um; medium: mistura; advanced: mais amplitude
+            if (level === 'easy') {
+                const au = randomInt(0, 9);
+                const bu = randomInt(0, 9-au); // sem vai-um
+                const at = randomInt(0, Math.floor(r.max / 10));
+                const bt = randomInt(0, Math.floor(r.max / 10));
+                a = at * 10 + au;
+                b = bt * 10 + bu;
+                if (isBaseSafe && (a + b) > maxBase) continue;
+            } else if (level === 'medium') {
+                // 55% com vai-um para consolidar
+                const wantCarry = Math.random() < 0.55;
+                if (wantCarry) {
+                    const au = randomInt(0, 9);
+                    const bu = randomInt(Math.max(10 - au, 0), 9);
+                    const at = randomInt(0, Math.floor(r.max / 10));
+                    const bt = randomInt(0, Math.floor(r.max / 10));
+                    a = at * 10 + au;
+                    b = bt * 10 + bu;
+                } else {
+                    a = randomInt(r.min, r.max);
+                    b = randomInt(r.min, r.max);
+                }
+                if (isBaseSafe && (a + b) > maxBase) continue;
+            } else {
+                a = randomInt(r.min, r.max);
+                b = randomInt(r.min, r.max);
+            }
+            const key = `${a}+${b}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            pairs.push([a, b]);
+        } else {
+            // subtraction: garante resultado >= 0
+            if (level === 'easy') {
+                a = randomInt(0, r.max);
+                b = randomInt(0, Math.min(a, r.max));
+            } else if (level === 'medium') {
+                const wantBorrow = Math.random() < 0.55;
+                if (wantBorrow) {
+                    // força empréstimo nas unidades: u1 < u2
+                    const u2 = randomInt(1, 9);
+                    const u1 = randomInt(0, u2 - 1);
+                    const t1 = randomInt(0, Math.floor(r.max / 10));
+                    const t2 = randomInt(0, Math.min(t1, Math.floor(r.max / 10)));
+                    a = t1 * 10 + u1;
+                    b = t2 * 10 + u2;
+                    if (a < b) { const tmp = a; a = b; b = tmp; }
+                } else {
+                    a = randomInt(r.min, r.max);
+                    b = randomInt(r.min, r.max);
+                    if (a < b) { const tmp = a; a = b; b = tmp; }
+                }
+            } else {
+                a = randomInt(r.min, r.max);
+                b = randomInt(r.min, r.max);
+                if (a < b) { const tmp = a; a = b; b = tmp; }
+            }
+            if (isBaseSafe && a > maxBase) { a = randomInt(0, maxBase); b = randomInt(0, a); }
+            const key = `${a}-${b}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            pairs.push([a, b]);
+        }
+    }
+
+    // fallback: se por algum motivo não completou, preenche repetindo
+    while (pairs.length < size && pairs.length > 0) pairs.push(pairs[pairs.length % pairs.length]);
+    return pairs;
+}
+
+function ensureAddSubPool(operation, level) {
+    if (!gameState.addSubPools) return;
+    const lvl = (normalizeLevelKey(level) === 'easy' || normalizeLevelKey(level) === 'medium' || normalizeLevelKey(level) === 'advanced') ? normalizeLevelKey(level) : 'medium';
+    const cur = gameState.addSubPools[operation] && gameState.addSubPools[operation][lvl];
+    const idx = gameState.addSubPools.idx && gameState.addSubPools.idx[operation] ? gameState.addSubPools.idx[operation][lvl] : 0;
+    if (!cur || cur.length !== gameState.addSubPools.size || idx >= cur.length) {
+        gameState.addSubPools[operation][lvl] = buildAddSubPool(operation, lvl, gameState.addSubPools.size);
+        gameState.addSubPools.idx[operation][lvl] = 0;
+    }
+}
+
+function nextFromAddSubPool(operation, level) {
+    if (!gameState.addSubPools) return null;
+    const lvl = (normalizeLevelKey(level) === 'easy' || normalizeLevelKey(level) === 'medium' || normalizeLevelKey(level) === 'advanced') ? normalizeLevelKey(level) : 'medium';
+    ensureAddSubPool(operation, lvl);
+    const arr = gameState.addSubPools[operation][lvl];
+    const i = gameState.addSubPools.idx[operation][lvl] || 0;
+    const pair = arr && arr[i] ? arr[i] : null;
+    gameState.addSubPools.idx[operation][lvl] = i + 1;
+    return pair;
+}
+
+
 function generateQuestion(operation) {
     let num1, num2, answer, questionString, questionSpeak;
     
@@ -1645,48 +2814,120 @@ function generateQuestion(operation) {
 
     switch (operation) {
         case 'addition':
-            // Números maiores com o aumento do diffFactor
-            num1 = randomInt(10 * diffFactor, 50 * diffFactor); 
-            num2 = randomInt(5 * diffFactor, 25 * diffFactor);
-            answer = num1 + num2;
-            questionString = `${num1} + ${num2}`;
-            questionSpeak = `${num1} mais ${num2}`;
+            {
+                const effectiveLevel = (gameState.multiplication && gameState.multiplication.pendingLevel) ? gameState.multiplication.pendingLevel : gameState.currentLevel;
+                const lvl = normLevelKey(effectiveLevel);
+                const useFixed = Math.random() < 0.70;
+                let pair = null;
+                if (useFixed) pair = nextFromFixedPool('addition', lvl);
+                if (!pair) {
+                    const key = pickBucketKey(PET_BLUEPRINT.add[lvl].buckets);
+                    pair = genAdd(lvl, key);
+                }
+                num1 = pair[0];
+                num2 = pair[1];
+                answer = num1 + num2;
+                questionString = `${num1} + ${num2}`;
+                questionSpeak = `${num1} mais ${num2}`;
+                maybeRebuildFixedPool('addition', lvl);
+            }
             break;
-        case 'subtraction':
-            num1 = randomInt(20 * diffFactor, 80 * diffFactor);
-            num2 = randomInt(5 * diffFactor, num1 - (10 * diffFactor));
-            answer = num1 - num2;
-            questionString = `${num1} - ${num2}`;
-            questionSpeak = `${num1} menos ${num2}`;
+case 'subtraction':
+            {
+                const effectiveLevel = (gameState.multiplication && gameState.multiplication.pendingLevel) ? gameState.multiplication.pendingLevel : gameState.currentLevel;
+                const lvl = normLevelKey(effectiveLevel);
+                const useFixed = Math.random() < 0.70;
+                let pair = null;
+                if (useFixed) pair = nextFromFixedPool('subtraction', lvl);
+                if (!pair) {
+                    const key = pickBucketKey(PET_BLUEPRINT.sub[lvl].buckets);
+                    pair = genSub(lvl, key);
+                }
+                num1 = pair[0];
+                num2 = pair[1];
+                answer = num1 - num2;
+                questionString = `${num1} - ${num2}`;
+                questionSpeak = `${num1} menos ${num2}`;
+                maybeRebuildFixedPool('subtraction', lvl);
+            }
             break;
-        case 'multiplication':
-            // Tabuada — modo direto (uma tabuada) ou trilha (todas as contas do nível)
-            if (gameState.multiplication && (gameState.multiplication.mode === 'direct' || gameState.multiplication.mode === 'trail')) {
-                if (gameState.multiplication.mode === 'trail') {
-                    const pair = getNextTrailPair(); // [tabuada, multiplicador]
+case 'multiplication':
+            {
+                const effectiveLevel = (gameState.multiplication && gameState.multiplication.pendingLevel) ? gameState.multiplication.pendingLevel : gameState.currentLevel;
+                const lvl = normLevelKey(effectiveLevel);
+                const range = PET_BLUEPRINT.mult[lvl] || PET_BLUEPRINT.mult.easy;
+
+                const mulState = gameState.multiplication || (gameState.multiplication = {});
+                // sempre atualiza a faixa da trilha para exibição (não interfere no modo direto)
+                mulState.trailMin = range.tabMin;
+                mulState.trailMax = range.tabMax;
+
+                const isDirect = (mulState.mode === 'direct') || (mulState.directLock === true);
+
+                if (isDirect) {
+                    // Modo Estudo (revisão): usa apenas erros pendentes, 3 acertos por erro
+                    if (isStudy() && gameState.sessionConfig && gameState.sessionConfig.type==='study_mul' && gameState.sessionConfig.phase==='review') {
+                        const picked = studyMulPickReviewPair();
+                        if (picked) {
+                            num1 = picked[0];
+                            num2 = picked[1];
+                            mulState.__reviewKey = picked[2];
+                        }
+                    }
+
+                    if (num1 != null && num2 != null) {
+                        mulState.directLock = true;
+                    } else {
+                    // 🔒 Modo direto: tabuada FIXA escolhida pelo estudante, SEM qualquer ajuste por nível
+                    const t = Number.isInteger(mulState.lockTabuada) ? mulState.lockTabuada
+                            : (Number.isInteger(mulState.tabuada) ? mulState.tabuada : 1);
+
+                    mulState.directLock = true;
+                    mulState.lockTabuada = t;
+                    mulState.tabuada = t;
+
+                    // multiplicadores fixos por tabuada:
+                    // - 0–10: x 1..10
+                    // - 11–20: x 1..20
+                    const maxMul = (t >= 11 ? 20 : 10);
+
+                    mulState.multMin = 1;
+                    mulState.multMax = maxMul;
+                    if (!Array.isArray(mulState.directMultipliers) || mulState.directMultipliers.length === 0) {
+                        mulState.directMultipliers = [];
+                        for (let k = 1; k <= maxMul; k++) mulState.directMultipliers.push(k);
+                        shuffleArray(mulState.directMultipliers);
+                    }
+                    const mVal = mulState.directMultipliers.pop();
+
+num1 = t;
+                    num2 = mVal;
+                    }
+                } else {
+                    // Trilha: 70% pool fixo (50) + 30% gerador por regras (anti-decor)
+                    const useFixed = Math.random() < 0.70;
+                    let pair = null;
+                    if (useFixed) pair = nextFromFixedPool('multiplication', lvl);
+                    if (!pair) pair = genMultPair(lvl);
+
+                    // garante tabuada na faixa
+                    if (pair[0] < range.tabMin || pair[0] > range.tabMax) pair[0] = randomInt(range.tabMin, range.tabMax);
+
                     num1 = pair[0];
                     num2 = pair[1];
-                    // mantém a tabuada atual para relatórios/feedback
-                    gameState.multiplication.tabuada = num1;
-                } else {
-                    const t = gameState.multiplication.tabuada;
-                    const m = getNextRoundMultiplier(); // multiplicadores do nível (ordem embaralhada)
-                    num1 = t;
-                    num2 = m;
+
+                    // não sobrescreve tabuada caso o modo direto tenha sido travado
+                    if (!mulState.directLock) mulState.tabuada = num1;
+
+                    maybeRebuildFixedPool('multiplication', lvl);
                 }
-                answer = num1 * num2;
-                questionString = `${num1} x ${num2}`;
-                questionSpeak = `${num1} vezes ${num2}`;
-            } else {
-                // (modo livre antigo) Tabuadas mais altas no nível avançado
-                num1 = randomInt(2, diffFactor < 3 ? 12 : 25);
-                num2 = randomInt(2, diffFactor < 3 ? 10 : 15);
+
                 answer = num1 * num2;
                 questionString = `${num1} x ${num2}`;
                 questionSpeak = `${num1} vezes ${num2}`;
             }
             break;
-        case 'division':
+case 'division':
             let divisor = randomInt(2, diffFactor < 3 ? 8 : 12);
             let quotient = randomInt(2, diffFactor < 3 ? 10 : 20);
             num1 = divisor * quotient;
@@ -1743,7 +2984,8 @@ return {
         // Informação extra para salvar erro
         operacao: operation,
         num1: num1,
-        num2: num2
+        num2: num2,
+        reviewKey: (gameState.multiplication && gameState.multiplication.__reviewKey) ? gameState.multiplication.__reviewKey : null
     };
 }
 
@@ -1766,10 +3008,31 @@ function startGame(operation, level) {
     gameState.currentOperation = operation;
     gameState.currentLevel = level;
  
-    gameState.isGameActive = true;
+    
+    // mantém nível pendente para a multiplicação (evita faixa errada no 'Escolher tabuada')
+    if(operation === 'multiplication' && gameState.multiplication){
+        gameState.multiplication.pendingLevel = level;
+        // No modo 'Escolher tabuada', multiplicadores são fixos por tabuada:
+        // - 0–10: x 1..10
+        // - 11–20: x 1..20
+        if (gameState.multiplication.mode === 'direct' || gameState.multiplication.directLock === true) {
+            const t = Number.isInteger(gameState.multiplication.lockTabuada) ? gameState.multiplication.lockTabuada
+                : (Number.isInteger(gameState.multiplication.tabuada) ? gameState.multiplication.tabuada : 1);
+            const maxMul = (t >= 11 ? 20 : 10);
+            gameState.multiplication.multMin = 1;
+            gameState.multiplication.multMax = maxMul;
+        }
+    }
+gameState.isGameActive = true;
     gameState.score = 0;
     gameState.questionNumber = 0;
     gameState.acertos = 0;
+    gameState.answerTimes = [];
+    gameState.fastAnswers = 0;
+    gameState.suspectSession = false;
+    gameState.__inMicro = false;
+    gameState.__tagStreak = {};
+
     gameState.erros = 0;
     gameState.sessionStartTs = Date.now();
     
@@ -1786,6 +3049,29 @@ function startGame(operation, level) {
         gameState.totalQuestions = Math.max(1, Math.floor(__cfg.totalQuestions));
     }
 
+    // PET: skillKey + plano de intervenção (se houver)
+    try{
+        gameState.currentSkillKey = petSkillKeyFromState();
+        const plan = petGetPlan(gameState.currentSkillKey);
+        gameState.__petPlan = plan;
+        gameState.__petInterventionApplied = null;
+        if (plan && plan.kind && plan.kind !== 'none'){
+            // aplica apenas planos marcados como autoApply, ou planos de recuperação/revisão (seguros)
+            const shouldApply = !!plan.autoApply || plan.kind === 'recovery' || plan.kind === 'review';
+            if (shouldApply){
+                if (plan.forceStudyMode) gameState.isRapidMode = false;
+                if (plan.overrideLevel) gameState.currentLevel = plan.overrideLevel;
+                if (Number.isFinite(plan.totalQuestions)) gameState.totalQuestions = Math.max(1, Math.floor(plan.totalQuestions));
+                if (plan.disableTimer) gameState.isRapidMode = false;
+                gameState.__petInterventionApplied = `PLAN_${String(plan.kind).toUpperCase()}`;
+                // consome o plano após aplicar (evita repetir indefinidamente)
+                petClearPlan(gameState.currentSkillKey);
+            }
+        }
+    }catch(_){}
+
+
+
     // Mostra/oculta o timer conforme modo (Estudo/Defasagem sem pressão)
     const __timerContainer = document.getElementById('timer-container');
     if (__timerContainer) __timerContainer.style.display = gameState.isRapidMode ? 'block' : 'none';
@@ -1793,48 +3079,44 @@ function startGame(operation, level) {
 if (operation === 'multiplication' && gameState.multiplication && (gameState.multiplication.mode === 'direct' || gameState.multiplication.mode === 'trail')) {
     const r = getTabuadaRangeByLevel(level);
 
-    // Aplica a faixa do nível: tabuadas e multiplicadores
+    // Sempre registra a faixa do nível (para UI e trilha)
     gameState.multiplication.trailMin = r.min;
     gameState.multiplication.trailMax = r.max;
-    gameState.multiplication.multMin = r.multMin;
-    gameState.multiplication.multMax = r.multMax;
-    gameState.multiplication.trailRangeKey = `${r.min}-${r.max}|${r.multMin}-${r.multMax}`;
 
-    // Garante tabuada válida (modo direto)
-    if (!Number.isInteger(gameState.multiplication.tabuada) || gameState.multiplication.tabuada < r.min || gameState.multiplication.tabuada > r.max) {
-        gameState.multiplication.tabuada = r.min;
-    }
+    // 🔒 Direto (Escolher tabuada) é ESTRITO:
+    // - tabuada fixa escolhida
+    // - multiplicadores fixos 1–10 (independente do nível)
+    // - NÃO sobrescreve com a faixa do nível (isso causava vazamento/bug)
+    if (gameState.multiplication.mode === 'direct') {
+        gameState.multiplication.multMin = 1;
+        gameState.multiplication.multMax = 10;
+        gameState.multiplication.trailRangeKey = `${r.min}-${r.max}|1-10`;
 
-    if (gameState.multiplication.mode === 'trail') {
+        
+        // Direto: embaralha 1–10 e percorre sem repetir até completar
+        prepareRoundMultipliersForCurrentLevel();
+
+        // Sessão = 10 questões (1..10)
+        gameState.totalQuestions = (gameState.multiplication.multMax - gameState.multiplication.multMin + 1);
+        saveMultiplicationConfig();
+    } else {
+        // Trilha: aplica faixa do nível para tabuadas e multiplicadores
+        gameState.multiplication.multMin = r.multMin;
+        gameState.multiplication.multMax = r.multMax;
+        gameState.multiplication.trailRangeKey = `${r.min}-${r.max}|${r.multMin}-${r.multMax}`;
+
         // Trilha: TODAS as contas do nível, em ordem aleatória (sem repetir até completar)
         ensureTrailPairs(r.min, r.max, r.multMin, r.multMax);
-    } else {
-        // Direto: multiplicadores embaralhados para a tabuada escolhida
-        prepareRoundMultipliersForCurrentLevel();
-    }
 
-    // Quantidade de questões por sessão:
-    // ✅ Modo Rápido TAMBÉM percorre o banco completo do nível (ciclo inteiro, sem repetir)
-    // - Trilha: percorre TODAS as contas da faixa do nível (ex.: 66/55/210), respeitando progresso salvo.
-    // - Direto: percorre todos os multiplicadores do nível para a tabuada escolhida.
-    const bankSize = (gameState.multiplication.mode === 'trail')
-        ? getTrailPairsBankSize(r.min, r.max, r.multMin, r.multMax)
-        : (r.multMax - r.multMin + 1);
-
-    if (gameState.multiplication.mode === 'trail') {
         // Se já houver progresso salvo no ciclo, joga apenas o restante para fechar o ciclo.
+        const bankSize = getTrailPairsBankSize(r.min, r.max, r.multMin, r.multMax);
         const idx = Number.isInteger(gameState.multiplication.trailPairIndex) ? gameState.multiplication.trailPairIndex : 0;
         const remaining = Math.max(0, bankSize - idx);
         gameState.totalQuestions = remaining > 0 ? remaining : bankSize;
-    } else {
-        gameState.totalQuestions = bankSize;
+
+        saveMultiplicationConfig();
     }
-
-    saveMultiplicationConfig();
 }
-
-
-
 
     // 2. Configura o tempo máximo baseado no nível e acessibilidade
     let baseTime;
@@ -1915,6 +3197,33 @@ gameState.questionNumber++;
     // 1. Gerar nova questão 
     const newQ = generateQuestion(gameState.currentOperation);
     gameState.currentQuestion = newQ;
+    // ID estável para anti-vazamento (treino vs validação)
+    // Se for validação: evita itens vistos recentemente no treino
+    try{
+      if(gameState.sessionConfig && gameState.sessionConfig.validation===true){
+        let tries=0;
+        while(tries<12 && isRecentlySeenInTrain(newQ, 14)){
+          const reroll = generateQuestion(gameState.currentOperation);
+          newQ.question = reroll.question; newQ.answer = reroll.answer; newQ.options = reroll.options; newQ.voiceOptions = reroll.voiceOptions;
+          newQ.operacao = reroll.operacao; newQ.num1 = reroll.num1; newQ.num2 = reroll.num2;
+          const a = (newQ.num1!=null)?newQ.num1:''; const b=(newQ.num2!=null)?newQ.num2:'';
+          newQ.id = `${gameState.currentOperation}|${a}|${b}`;
+          tries++;
+        }
+      }
+    }catch(_){ }
+
+    try{
+      if(!newQ.id){
+        const a = (newQ.num1!=null)?newQ.num1:'';
+        const b = (newQ.num2!=null)?newQ.num2:'';
+        newQ.id = `${gameState.currentOperation}|${a}|${b}`;
+      }
+      if(!newQ.skillTag){ newQ.skillTag = computeSkillTag(newQ, null); }
+      // Marca como visto no treino (exceto validação)
+      if(!(gameState.sessionConfig && gameState.sessionConfig.validation===true)) rememberTrainItem(newQ);
+    }catch(_){ }
+    gameState.qStartTs = Date.now();
     gameState.attemptsThisQuestion = 0;
     // 2. Atualizar UI
     const totalDisplay = (gameState.isRapidMode || isTabuadaRound || isFiniteSession) ? gameState.totalQuestions : '∞';
@@ -1959,12 +3268,174 @@ function saveError(question, userAnswer) {
         // para potenciação, num2 é o expoente
         timestamp: Date.now(),
         level: gameState.currentLevel,
-        mode: gameState.isRapidMode ? 'rapido' : 'estudo'
+        mode: gameState.isRapidMode ? 'rapido' : 'estudo',
+        skillTag: (gameState.v17 && gameState.v17.currentSkillTag) ? gameState.v17.currentSkillTag : null
     };
+    try{ studyMulRecordError(question); }catch(_){ }
     gameState.errors.unshift(errorData);
     salvarErros();
 }
 
+
+
+/* ------------------ Pedagogia: skillTag + explicação (v20) ------------------ */
+const TRAIN_SEEN_KEY = 'pet_seen_train_ids_v1';
+function loadSeenTrain(){
+  try{ return JSON.parse(localStorage.getItem(TRAIN_SEEN_KEY) || '{}'); }catch(_){ return {}; }
+}
+function saveSeenTrain(map){
+  try{ localStorage.setItem(TRAIN_SEEN_KEY, JSON.stringify(map)); }catch(_){}
+}
+function rememberTrainItem(q){
+  try{
+    if(!q || !q.id) return;
+    const map = loadSeenTrain();
+    map[q.id] = Date.now();
+    saveSeenTrain(map);
+  }catch(_){}
+}
+function isRecentlySeenInTrain(q, days=14){
+  try{
+    if(!q || !q.id) return false;
+    const map = loadSeenTrain();
+    const ts = map[q.id];
+    if(!ts) return false;
+    const ms = days*24*60*60*1000;
+    return (Date.now()-ts) < ms;
+  }catch(_){ return false; }
+}
+function normLevelKey(lvl){
+  const v = String(lvl||'').toLowerCase();
+  if(v==='fácil' || v==='facil' || v==='easy') return 'easy';
+  if(v==='médio' || v==='medio' || v==='medium') return 'medium';
+  if(v==='difícil' || v==='dificil' || v==='hard' || v==='advanced') return 'hard';
+  return v || 'easy';
+}
+function computeSkillTag(q, userAnswer){
+  const op = q?.operacao || q?.operation || gameState.currentOperation;
+  const a = Number(q?.num1); const b = Number(q?.num2);
+  if(op==='addition'){
+    const uSum = (a%10)+(b%10);
+    if(((a+b)%10)===0 || ((a+b)%20)===0) return 'ADD_C10';
+    if(uSum>=10) return 'ADD_CARRY';
+    return 'ADD_BASIC';
+  }
+  if(op==='subtraction'){
+    if((a%10) < (b%10)) return 'SUB_BORROW';
+    return 'SUB_NO_BORROW';
+  }
+  if(op==='multiplication'){
+    const maxF = Math.max(a,b);
+    if(a===9 || b===9) return 'MUL_9_ANCHOR';
+    if(maxF>=11) return 'MUL_DIST_11_20';
+    // confunde com soma?
+    const sum = a+b;
+    if(Number.isFinite(userAnswer) && (userAnswer===sum || Math.abs(userAnswer-sum)<=1)) return 'MUL_VS_ADD';
+    return 'MUL_BASIC';
+  }
+  if(op==='division'){ return 'DIV_SHARE'; }
+  return null;
+}
+function buildExplanation(q, tag){
+  const op = q?.operacao || gameState.currentOperation;
+  const a = Number(q?.num1); const b = Number(q?.num2);
+  if(op==='addition' && tag==='ADD_C10'){
+    const need = (10-(a%10))%10;
+    if(need>0 && need<=9){
+      return `${a} + ${b}: complete 10 primeiro. ${a} precisa de ${need} para virar ${a+need}. Depois some o resto.`;
+    }
+    return `${a} + ${b}: procure completar 10 (ou 20) e depois somar o que sobrou.`;
+  }
+  if(op==='addition' && tag==='ADD_CARRY'){
+    const uSum=(a%10)+(b%10);
+    return `${a} + ${b}: as unidades dão ${uSum}. Como passou de 10, troque 10 unidades por 1 dezena (vai‑um).`;
+  }
+  if(op==='subtraction' && tag==='SUB_BORROW'){
+    return `${a} − ${b}: nas unidades não dá. Pegue 1 dezena e transforme em 10 unidades (empréstimo).`;
+  }
+  if(op==='subtraction' && tag==='SUB_NO_BORROW'){
+    return `${a} − ${b}: dá para tirar nas unidades. Não precisa emprestar.`;
+  }
+  if(op==='multiplication' && tag==='MUL_VS_ADD'){
+    return `${a} × ${b}: multiplicar é repetir grupos iguais (não é somar os fatores). Pense em ${a} grupos de ${b}.`;
+  }
+  if(op==='multiplication' && tag==='MUL_9_ANCHOR'){
+    const n = (a===9)?b:a;
+    return `9 × ${n}: use a âncora 10×${n} − ${n}.`;
+  }
+  if(op==='multiplication' && tag==='MUL_DIST_11_20'){
+    const big=Math.max(a,b), n=Math.min(a,b);
+    const rest = big-10;
+    return `${big} × ${n}: quebre em 10×${n} + ${rest}×${n}.`;
+  }
+  if(op==='division'){
+    return `${a} ÷ ${b}: dividir é repartir igualmente. Pense em grupos do mesmo tamanho.`;
+  }
+  return 'Use uma estratégia: pense antes de marcar.';
+}
+/* microcorreções: 5 itens dirigidos por tag */
+function generateMicroSet(tag, level){
+  const lvl = normLevelKey(level || gameState.currentLevel);
+  const out=[];
+  function pushQ(op,a,b){
+    const q = generateQuestion(op); // base
+    // overwrite if possible by building from numbers
+    try{
+      const built = buildQuestionFromNumbers(op,a,b);
+      if(built) return out.push(built);
+    }catch(_){}
+    // fallback: keep generated
+    out.push(q);
+  }
+  if(tag==='ADD_C10'){
+    [[6,4],[8,2],[7,3],[14,6],[12,8]].forEach(([a,b])=>pushQ('addition',a,b));
+  } else if(tag==='ADD_CARRY'){
+    [[23,8],[37,6],[28,17],[46,18],[49,12]].forEach(([a,b])=>pushQ('addition',a,b));
+  } else if(tag==='SUB_BORROW'){
+    [[52,7],[41,9],[61,28],[70,46],[120,57]].forEach(([a,b])=>pushQ('subtraction',a,b));
+  } else if(tag==='SUB_NO_BORROW'){
+    [[54,12],[87,23],[69,14],[75,25],[92,41]].forEach(([a,b])=>pushQ('subtraction',a,b));
+  } else if(tag==='MUL_VS_ADD'){
+    [[2,4],[3,4],[4,3],[5,2],[5,4]].forEach(([a,b])=>pushQ('multiplication',a,b));
+  } else if(tag==='MUL_9_ANCHOR'){
+    [[9,4],[9,6],[9,7],[9,8],[9,9]].forEach(([a,b])=>pushQ('multiplication',a,b));
+  } else if(tag==='MUL_DIST_11_20'){
+    [[11,6],[12,7],[15,8],[18,6],[14,9]].forEach(([a,b])=>pushQ('multiplication',a,b));
+  } else if(tag==='DIV_SHARE'){
+    [[12,3],[15,5],[18,6],[20,4],[24,6]].forEach(([a,b])=>pushQ('division',a,b));
+  }
+  return out.slice(0,5).map(q=>{
+    // ensure no timer in micro
+    return q;
+  });
+}
+function startMicroCorrection(tag){
+  if(!tag) return;
+  // evita loop infinito
+  if(gameState.__inMicro) return;
+  gameState.__inMicro = true;
+  // sem tempo
+  gameState.isTrainingErrors = true;
+  gameState.isRapidMode = false;
+  stopTimer();
+  if(btnShowAnswer) btnShowAnswer.disabled = true;
+  if(btnExtendTime) btnExtendTime.disabled = true;
+  // fila dirigida
+  const qs = generateMicroSet(tag, gameState.currentLevel);
+  gameState.trainingQueue = qs.map(buildQuestionFromErrorSafe);
+  gameState.trainingIndex = 0;
+  gameState.totalQuestions = gameState.trainingQueue.length;
+  gameState.questionNumber = 0;
+  showFeedbackMessage(buildExplanation(gameState.currentQuestion, tag), 'info', 3200);
+  // inicia
+  nextTrainingQuestion(true);
+}
+/* helpers para fila dirigida */
+function buildQuestionFromErrorSafe(q){
+  // q pode vir como objeto questão já pronto
+  if(q && q.question && q.options) return q;
+  return q;
+}
 
 function handleAnswer(selectedAnswer, selectedButton) {
     if (!gameState.isGameActive) return;
@@ -1977,6 +3448,14 @@ function handleAnswer(selectedAnswer, selectedButton) {
     const isTraining = !!gameState.isTrainingErrors;
     const isCorrect = selectedAnswer === q.answer;
 
+    // Tempo de resposta (anti-chute)
+    const dt = (gameState.qStartTs ? (Date.now() - gameState.qStartTs) : null);
+    if (dt != null) {
+        gameState.answerTimes.push(dt);
+        if (dt < 600) gameState.fastAnswers = (gameState.fastAnswers || 0) + 1;
+    }
+
+
     // Trava clique duplo muito rápido
     gameState.answerLocked = true;
     setTimeout(() => { gameState.answerLocked = false; }, 220);
@@ -1986,6 +3465,21 @@ function handleAnswer(selectedAnswer, selectedButton) {
         stopTimer();
     }
 
+function buildQuestionFromNumbers(op, a, b){
+  a = Number(a); b = Number(b);
+  if(!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const operacao = op;
+  let questionStr = '';
+  let answer = 0;
+  if(op==='addition'){ questionStr = `${a} + ${b} = ?`; answer = a+b; }
+  else if(op==='subtraction'){ questionStr = `${a} - ${b} = ?`; answer = a-b; }
+  else if(op==='multiplication'){ questionStr = `${a} × ${b} = ?`; answer = a*b; }
+  else if(op==='division'){ questionStr = `${a} ÷ ${b} = ?`; answer = Math.floor(a/b); }
+  else return null;
+  const opts = generateOptions(answer, op);
+  return { question: questionStr, answer, options: opts, voiceOptions: opts, operacao, num1:a, num2:b, id: `${op}|${a}|${b}`, skillTag: null };
+}
+
     // Estilo: destaca o botão clicado
     if (selectedButton) {
         selectedButton.classList.remove('correct', 'wrong');
@@ -1993,6 +3487,14 @@ function handleAnswer(selectedAnswer, selectedButton) {
     }
 
     if (isCorrect) {
+        // Modo Estudo (revisão multiplicação): decrementar contagem de revisão
+        if (isStudy() && gameState.sessionConfig && gameState.sessionConfig.type==='study_mul' && gameState.sessionConfig.phase==='review') {
+            const k = question.reviewKey || (question.num1 + ' x ' + question.num2);
+            studyMulOnCorrectReview(k);
+        }
+
+        gameState.wrongStreak = 0;
+        try{ gameState.__tagStreak = {}; gameState.__inMicro = false; }catch(_){ }
         // Finaliza (correto)
         if (gameState.isRapidMode && !isTraining) stopTimer();
 
@@ -2007,6 +3509,7 @@ function handleAnswer(selectedAnswer, selectedButton) {
 
         // Pontos e XP (menos pontos se acertar depois de errar)
         gameState.acertos++;
+        try{ petMaybeActivateShortSession(); }catch(_){ }
         const baseGain = gameState.isRapidMode ? 20 * gameState.questionNumber : 10;
         const multiplier = (gameState.attemptsThisQuestion === 0) ? 1 : 0.7;
         const scoreGain = Math.round(baseGain * multiplier);
@@ -2054,8 +3557,23 @@ function handleAnswer(selectedAnswer, selectedButton) {
 
     // Salva erro (mesmo que depois acerte, isso ajuda a mapear as dificuldades)
     gameState.erros++;
+    try{ petMaybeActivateShortSession(); }catch(_){ }
     atualizarXP(-2);
     saveError(q, selectedAnswer);
+
+    // Feedback explicativo + microcorreção por erro recorrente
+    const tag = computeSkillTag(q, selectedAnswer);
+    try{ gameState.v17 = gameState.v17 || {}; gameState.v17.currentSkillTag = tag; }catch(_){ }
+    const expl = buildExplanation(q, tag);
+    if(!isTraining) showFeedbackMessage(expl, 'warning', 2600);
+    gameState.__tagStreak = gameState.__tagStreak || {};
+    gameState.__tagStreak[tag] = (gameState.__tagStreak[tag] || 0) + 1;
+    // gatilho: 2 seguidos do mesmo tipo
+    if(gameState.__tagStreak[tag] >= 2){
+      setTimeout(()=>{ startMicroCorrection(tag); }, 450);
+      gameState.__tagStreak[tag] = 0;
+    }
+
 
     // No treino: não revela a resposta; deixa refazer até acertar
     if (isTraining) {
@@ -2099,11 +3617,21 @@ function handleAnswer(selectedAnswer, selectedButton) {
 
 function endGame() {
     gameState.isGameActive = false;
+    gameState.__inMicro = false;
     if (gameState.isRapidMode) stopTimer();
 
     // 1. Calcular XP Ganhos na Rodada (apenas para exibição)
-    const xpGained = gameState.acertos * (gameState.isRapidMode ? 5 : 2) - gameState.erros * 2;
+    const xpGained = gameState.acertos * (gameState.isRapidMode ? 5 : 2) - gameState.erros * 2 - gameState.erros * 0;
     
+    // --- Anti-chute: marca sessão suspeita ---
+    try{
+        const total = (gameState.acertos||0)+(gameState.erros||0);
+        const acc = total>0 ? (gameState.acertos/total) : 0;
+        const fast = gameState.fastAnswers || 0;
+        const median = (()=>{ const arr=(gameState.answerTimes||[]).slice().sort((a,b)=>a-b); if(arr.length===0) return null; return arr[Math.floor(arr.length/2)]; })();
+        gameState.suspectSession = (total>=8 && acc<0.6 && (fast/Math.max(1,total))>0.55) || (median!=null && median<550 && acc<0.6);
+    }catch(_){ gameState.suspectSession=false; }
+
     // 2. Atualizar UI de Resultados
     document.getElementById('final-score').textContent = gameState.score;
     document.getElementById('total-hits').textContent = gameState.acertos;
@@ -2131,7 +3659,32 @@ function endGame() {
     // --- Campanha: marca lição como concluída e avança ---
     try {
         if (gameState.sessionConfig && gameState.sessionConfig.type === 'campaign') {
-            completeCampaignLesson(gameState.sessionConfig);
+            completeCampaignLesson(gameState.sessionConfig, {acertos: gameState.acertos, erros: gameState.erros, suspect: !!gameState.suspectSession});
+        }
+    } catch (_) {}
+
+
+    // Modo Estudo: travas de domínio e sequência PET
+    try {
+        const total = (gameState.acertos || 0) + (gameState.erros || 0);
+        const accuracy = total > 0 ? (gameState.acertos || 0) / total : 0;
+        const suspect = !!gameState.suspectSession;
+
+        if (isStudy()) {
+            if (gameState.sessionConfig && gameState.sessionConfig.type === 'study_mul') {
+                studyMulEndSession(accuracy, suspect);
+                const st = studyLoad();
+                if (st.mul && st.mul.phase === 'done') {
+                    st.unlocked.division = true;
+                }
+                studySave(st);
+                studyLockUI();
+            } else {
+                // trava médio → avançado e sequência entre operações
+                if (gameState.currentLevel === 'medium') {
+                    registerStudyMediumPass(gameState.currentOperation, accuracy, suspect);
+                }
+            }
         }
     } catch (_) {}
 
@@ -2228,6 +3781,22 @@ try {
     appendSession({
         schemaVersion: '1.0',
         ts: Date.now(),
+        date: petIsoDate(Date.now()),
+        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
+        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
+        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
+        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
+        suspect: !!gameState.suspectSession,
+        interventionApplied: (gameState.__petInterventionApplied || null),
+
+        date: petIsoDate(Date.now()),
+        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
+        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
+        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
+        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
+        suspect: !!gameState.suspectSession,
+        interventionApplied: (gameState.__petInterventionApplied || null),
+
         operation: gameState.currentOperation,
         level: gameState.currentLevel,
         mode: gameState.isRapidMode ? 'rapido' : 'estudo',
@@ -2253,6 +3822,31 @@ try {
             trailMax: Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : null
         } : null
     });
+    // PET: decidir próximo plano (reduzir abandono / acelerar domínio)
+    try{
+        const skillKey = (gameState.currentSkillKey || petSkillKeyFromState());
+        const attempts = (gameState.acertos||0)+(gameState.erros||0);
+        const accuracy = attempts>0 ? Math.round(((gameState.acertos||0)/attempts)*1000)/10 : 0;
+        const avgSec = petAvgSec();
+        const errorsTop = petErrorsTopThisSession(5);
+        const plan = petDecideNextPlan({
+            skillKey,
+            accuracy,
+            errors: (gameState.erros||0),
+            attempts,
+            suspect: !!gameState.suspectSession,
+            avgSec,
+            errorsTop,
+            op: gameState.currentOperation,
+            level: gameState.currentLevel
+        });
+        gameState.__petNextPlan = plan;
+        // só grava plano se for aplicável
+        if (plan && plan.kind && plan.kind !== 'none'){
+            petSetPlan(skillKey, plan);
+        }
+    }catch(_){}
+
 } catch (e) {
     console.warn('Falha ao registrar sessão:', e);
 }
@@ -2287,7 +3881,7 @@ function startTimer() {
             } else if (cfg && cfg.type === 'minigame'){
                 showFeedbackMessage("Minigame concluído ✅", 'success', 2500);
             } else {
-                showFeedbackMessage("Tempo esgotado! Game Over!", 'error', 3000);
+                showFeedbackMessage("Tempo encerrado. Treino concluído ✅", 'success', 2500);
             }
         })();
             endGame(); 
@@ -2340,15 +3934,31 @@ function attachEventListeners() {
     // 1. Seleção de Operação (Vai para a tela de Nível)
     operationButtons.forEach(button => {
         button.addEventListener('click', () => {
-            // Guarda a operação para ser usada quando o nível for selecionado
-            gameState.currentOperation = button.getAttribute('data-operation');
-            
-            // MUDANÇA: Vai para a tela de seleção de nível
+            const op = button.getAttribute('data-operation');
+            // Modo Estudo: sequência travada
+            if(isStudy() && !studyCanOp(op)){
+                showFeedbackMessage('No Modo Estudo, você precisa seguir a ordem: Adição → Subtração → Multiplicação → Divisão → Potenciação → Radiciação.', 'warn', 3800);
+                return;
+            }
+            gameState.currentOperation = op;
+
+            // Multiplicação (Modo Estudo): trilha de tabuadas + revisão
+            if(isStudy() && op === 'multiplication'){
+                studyStartMultiplication();
+                return;
+            }
+
             exibirTela('level-selection-screen');
-            
-            // Atualiza trilha (mapa) na tela de nível
+            try {
+                const mapName = {addition:'Adição',subtraction:'Subtração',multiplication:'Multiplicação',division:'Divisão',potenciacao:'Potenciação',radiciacao:'Radiciação'};
+                const name = mapName[op] || op;
+                const h = document.querySelector('#level-selection-screen h1');
+                if (h) h.textContent = `${name} — escolha o nível`;
+            } catch (_) {}
             try { renderLearningMapPreview(gameState.currentOperation); } catch (_) {}
-speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o nível!`);
+            // Em estudo, atualiza locks visuais
+            try { studyLockUI(); } catch (_) {}
+            speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o nível!`);
             showFeedbackMessage(`Operação ${gameState.currentOperation.toUpperCase()} selecionada. Agora escolha o nível!`, 'info', 2500);
         });
     });
@@ -2357,6 +3967,11 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
     levelButtons.forEach(button => {
         button.addEventListener('click', () => {
             const level = button.getAttribute('data-level');
+            if(isStudy() && (level==='advanced' || level==='hard') && !studyCanAdvanced(gameState.currentOperation)) {
+                showFeedbackMessage('No Modo Estudo, o nível avançado só libera depois de você dominar o nível médio (2 sessões com ≥80%).', 'warn', 3600);
+                return;
+            }
+
             // Inicia o jogo com a operação já salva e o nível recém-clicado
             if (gameState.currentOperation === 'multiplication') {
                 openMultiplicationConfig(level);
@@ -2382,6 +3997,7 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
         if (gameState.isGameActive) {
             showFeedbackMessage("Rodada cancelada.", 'warning', 2000);
             gameState.isGameActive = false;
+    gameState.__inMicro = false;
         }
         exibirTela('home-screen');
     });
@@ -2429,6 +4045,7 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
         modeRapidoBtn.classList.add('active');
         modeEstudoBtn.classList.remove('active');
         showFeedbackMessage("Modo Rápido (20 Questões com Tempo) selecionado!", 'incentive', 2500);
+        studyLockUI();
     });
 
     modeEstudoBtn.addEventListener('click', () => {
@@ -2436,6 +4053,7 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
         modeEstudoBtn.classList.add('active');
         modeRapidoBtn.classList.remove('active');
         showFeedbackMessage("Modo Estudo (Infinito, Sem Tempo) selecionado! Use o botão 'Mostrar Resposta' para aprender.", 'incentive', 2500);
+        studyLockUI();
     });
 
     // 6. Toggle Leitura de Voz
@@ -2444,6 +4062,22 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
             const isActive = !gameState.isVoiceReadActive;
             gameState.isVoiceReadActive = isActive;
             toggleVoiceRead.classList.toggle('active', isActive);
+            // Ajuste imediato do tempo no Modo Rápido quando a voz é ativada/desativada
+            try {
+                if (gameState.isRapidMode && Number.isFinite(gameState.baseTime)) {
+                    const librasOn = document.body.classList.contains('libras-mode');
+                    const accOn = !!isActive || librasOn;
+                    const newMax = accOn ? (gameState.baseTime * 2) : gameState.baseTime;
+                    const prevMax = gameState.maxTime;
+                    gameState.maxTime = newMax;
+                    if (isActive && prevMax === gameState.baseTime) {
+                        gameState.timeLeft = Math.min(gameState.maxTime, gameState.timeLeft * 2);
+                    } else {
+                        gameState.timeLeft = Math.min(gameState.timeLeft, gameState.maxTime);
+                    }
+                    updateTimeBar();
+                }
+            } catch (_) {}
             if(synth) synth.cancel();
             speak(`Leitura de Voz ${isActive ? 'ativada' : 'desativada'}!`);
             showFeedbackMessage(`Leitura de Voz ${isActive ? 'ativada' : 'desativada'}!`, 'info', 2000);
@@ -2552,7 +4186,7 @@ speak(`Operação ${gameState.currentOperation} selecionada. Agora escolha o ní
     }
 
     if (btnStartTraining) {
-        btnStartTraining.addEventListener('click', () => {
+        safeOn(btnStartTraining, 'click', () => {
             startErrorTraining();
         });
     }
@@ -2764,6 +4398,12 @@ function setCampaignProgress(campaignId, prog) {
     saveCampaignState(st);
 }
 
+function isRetentionDue(ts){
+  if(!ts) return false;
+  const ms = 7*24*60*60*1000;
+  return (Date.now()-ts) > ms;
+}
+
 function lessonKey(campaignId, unitIndex, lessonIndex) {
     return `${campaignId}_u${unitIndex}_l${lessonIndex}`;
 }
@@ -2784,6 +4424,16 @@ function updateHomeCampaignUI() {
     if (!sub || !btn) return;
 
     const cid = getSelectedCampaignId();
+    // v19.2 — refletir seleção também na Home (Base 6º–7º / Reforço 8º–9º)
+    const pickBase = document.getElementById('campaign-pick-base');
+    const pickRef = document.getElementById('campaign-pick-reforco');
+    if (pickBase && pickRef) {
+        pickBase.classList.toggle('active', cid === 'base');
+        pickRef.classList.toggle('active', cid === 'reforco');
+        pickBase.setAttribute('aria-selected', cid === 'base' ? 'true' : 'false');
+        pickRef.setAttribute('aria-selected', cid === 'reforco' ? 'true' : 'false');
+    }
+
     const cur = getCurrentLesson(cid);
     if (!cur) {
         sub.textContent = 'Escolha uma campanha para começar.';
@@ -2858,6 +4508,10 @@ function startCampaignLesson(campaignId, unitIndex, lessonIndex) {
     const lesson = unit?.lessons?.[lessonIndex];
     if (!lesson) return;
 
+    const prog = getCampaignProgress(campaignId);
+    const k = lessonKey(campaignId, unitIndex, lessonIndex);
+    const passes = (prog && prog.passes && prog.passes[k]) ? prog.passes[k] : 0;
+    const needsValidation = (passes === 1) && !(prog && prog.done && prog.done[k]);
     // Define sessão especial (campanha)
     gameState.sessionConfig = {
         type: 'campaign',
@@ -2866,7 +4520,8 @@ function startCampaignLesson(campaignId, unitIndex, lessonIndex) {
         lessonIndex,
         totalQuestions: lesson.total || 10,
         forceRapidMode: (lesson.mode === 'rapid'),
-        label: `${camp.name} • ${unit.title} • ${lesson.title}`
+        label: `${camp.name} • ${unit.title} • ${lesson.title}${needsValidation ? ' • Validação' : ''}`,
+        validation: needsValidation
     };
 
     // Força modo (sem depender do toggle da home)
@@ -2877,14 +4532,42 @@ function startCampaignLesson(campaignId, unitIndex, lessonIndex) {
     startGame(lesson.operation, lesson.level);
 }
 
-function completeCampaignLesson(cfg) {
+function completeCampaignLesson(cfg, stats) {
     const camp = CAMPAIGNS[cfg.campaignId];
     if (!camp) return;
 
     const prog = getCampaignProgress(cfg.campaignId);
     const key = lessonKey(cfg.campaignId, cfg.unitIndex, cfg.lessonIndex);
     if (!prog.done) prog.done = {};
+    if (!prog.passes) prog.passes = {};
+    if (!prog.doneAt) prog.doneAt = {};
+
+    // Critério de domínio (MVP): 85%+ e não suspeito
+    const total = (stats?.acertos || 0) + (stats?.erros || 0);
+    const acc = total>0 ? (stats.acertos/total) : 0;
+    const ok = (acc >= 0.85) && !(stats?.suspect);
+
+    if (!ok) {
+        // Não conclui: exige reforço
+        showFeedbackMessage('Para concluir a lição: acerte pelo menos 85% e evite chute. Tente de novo (o app vai te reforçar).', 'warning', 4200);
+        renderCampaignScreen();
+        updateHomeCampaignUI();
+        return;
+    }
+
+    // Estabilidade: precisa passar 2 vezes (2 sessões)
+    prog.passes[key] = (prog.passes[key] || 0) + 1;
+    if (prog.passes[key] < 2) {
+        showFeedbackMessage('Boa. Falta 1 validação curta para confirmar domínio (2ª sessão).', 'info', 4200);
+        setCampaignProgress(cfg.campaignId, prog);
+        renderCampaignScreen();
+        updateHomeCampaignUI();
+        return;
+    }
+
+    // Concluído
     prog.done[key] = true;
+    prog.doneAt[key] = Date.now();
 
     // Avança ponteiro (próxima lição não concluída)
     let ui = cfg.unitIndex;
@@ -2939,6 +4622,53 @@ function setMentorEnabled(on) {
     if (btn) btn.classList.toggle('active', gameState.mentor.enabled);
     const bubble = document.getElementById('mentor-bubble');
     if (bubble && !gameState.mentor.enabled) bubble.classList.add('hidden');
+
+// --- Dificuldades (substitui 'Mentores' como menu de seleção) ---
+function loadDifficultyFocus() {
+    try {
+        const raw = localStorage.getItem('matemagica_diff_focus');
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+}
+function saveDifficultyFocus(arr) {
+    try { localStorage.setItem('matemagica_diff_focus', JSON.stringify(arr || [])); } catch (_) {}
+}
+function openDifficultiesModal() {
+    const modal = document.getElementById('difficulties-modal');
+    if (!modal) return;
+    const selected = new Set(loadDifficultyFocus());
+    modal.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = selected.has(cb.value);
+    });
+    modal.classList.remove('hidden');
+}
+function closeDifficultiesModal() {
+    const modal = document.getElementById('difficulties-modal');
+    if (modal) modal.classList.add('hidden');
+}
+function wireDifficultiesModal() {
+    const btn = document.getElementById('toggle-mentors');
+    safeOn(btn, 'click', (e) => { e.preventDefault(); openDifficultiesModal(); });
+
+    safeOn(document.getElementById('btn-close-diff'), 'click', closeDifficultiesModal);
+    safeOn(document.getElementById('btn-save-diff'), 'click', () => {
+        const modal = document.getElementById('difficulties-modal');
+        if (!modal) return;
+        const chosen = [];
+        modal.querySelectorAll('input[type="checkbox"]').forEach(cb => { if (cb.checked) chosen.push(cb.value); });
+        saveDifficultyFocus(chosen);
+        closeDifficultiesModal();
+        showFeedbackMessage('Preferências salvas.', 'success');
+    });
+
+    // fecha ao clicar fora
+    safeOn(document.getElementById('difficulties-modal'), 'click', (e) => {
+        if (e.target && e.target.id === 'difficulties-modal') closeDifficultiesModal();
+    });
+}
+
 }
 
 function mentorPickAvatar() {
@@ -3081,12 +4811,25 @@ function initRedesignUI() {
     if (btnContinue) {
         btnContinue.addEventListener('click', () => {
             const cid = getSelectedCampaignId();
+            const st = loadCampaignState();
+            const prog = st && st.progress && st.progress[cid] ? st.progress[cid] : null;
+            const hasProgress = !!(prog && (prog.unit > 0 || prog.lesson > 0 || (prog.done && Object.keys(prog.done).length > 0)));
+            if (hasProgress) {
+                const okContinue = window.confirm('Continuar de onde parou?\n\nOK = Continuar\nCancelar = Começar novo jogo');
+                if (!okContinue) {
+                    // novo jogo: zera progresso da campanha selecionada
+                    if (!st.progress) st.progress = {};
+                    st.progress[cid] = { unit: 0, lesson: 0, done: {} };
+                    saveCampaignState(st);
+                    renderCampaignScreen();
+                }
+            }
             const cur = getCurrentLesson(cid);
             if (cur) startCampaignLesson(cid, cur.unitIndex, cur.lessonIndex);
             else exibirTela('campaign-screen');
         });
     }
-    if (btnOpenCampaign) btnOpenCampaign.addEventListener('click', () => { renderCampaignScreen(); exibirTela('campaign-screen'); });
+    if (btnOpenCampaign) safeOn(btnOpenCampaign, 'click', () => { renderCampaignScreen(); exibirTela('campaign-screen'); });
     if (btnReview) btnReview.addEventListener('click', () => { exibirTela('error-training-screen'); });
     if (btnMini) {
         btnMini.addEventListener('click', () => {
@@ -3174,7 +4917,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Progresso separado por faixa/nível da tabuada + perfil (opcional)
     loadMultProgressMap();
     loadStudentProfile();
-    ensureProfileUI();
+    ensureProfileUI()
+
+// v19.1 — Defaults para turma fraca (Base seguro)
+try{
+    const FIRST_RUN_KEY = 'matemagica_first_run_v19_1';
+    if(!localStorage.getItem(FIRST_RUN_KEY)){
+        // Sempre começa no Base
+        if (typeof setSelectedCampaignId === 'function') setSelectedCampaignId('base');
+        // Base seguro: sem timer e leitura de voz ON
+        gameState.isRapidMode = false;
+        gameState.isVoiceReadActive = true;
+        localStorage.setItem(FIRST_RUN_KEY, '1');
+    }
+}catch(_){};
 attachEventListeners();
     initTeacherPanel();
 
@@ -3468,11 +5224,8 @@ attachEventListeners();
   }
 
   function maybeSetModeForQuestion(){
-    const base = isCampaignBase();
-    const pTyped = base ? 0.20 : 0.30;
-    let mode = (Math.random() < pTyped) ? 'typed' : 'mcq';
-    if (gameState.v17.forcedTypedCountdown > 0) mode = 'typed';
-    setAnswerMode(mode);
+    // v19.2 — Removido modo de digitar: sempre múltipla escolha
+    setAnswerMode('mcq');
   }
 
   function microcheckSpec(tag){
@@ -3515,16 +5268,51 @@ attachEventListeners();
     let num1=0,num2=0,answer=0,questionString='',questionSpeak='';
     let meta = {tag, ask:null};
     if (tag==='add_le20'){
-      num1=randInt(0,20); num2=randInt(0,20);
-      while(num1+num2>20){ num1=randInt(0,20); num2=randInt(0,20); }
+      // Padrão B (misto): garante carry em parte das questões (sem sair de 20)
+      gameState.v17._carryStreak = gameState.v17._carryStreak || 0;
+      const forceCarry = (gameState.v17._carryStreak >= 2) || (Math.random() < 0.55);
+      if (forceCarry){
+        // carry: unidades somam >=10 e resultado <=20
+        num1=randInt(0,19); num2=randInt(0,19);
+        while((num1+num2>20) || ((num1%10)+(num2%10)<10)){
+          num1=randInt(0,19); num2=randInt(0,19);
+        }
+        gameState.v17._carryStreak = 0;
+      } else {
+        // sem carry
+        num1=randInt(0,20); num2=randInt(0,20);
+        while((num1+num2>20) || ((num1%10)+(num2%10)>=10)){
+          num1=randInt(0,20); num2=randInt(0,20);
+        }
+        gameState.v17._carryStreak += 1;
+      }
       answer=num1+num2; questionString=`${num1} + ${num2}`; questionSpeak=`${num1} mais ${num2}`;
     } else if (tag==='add_carry_2d'){
       num1=randInt(10,99); num2=randInt(10,99);
       while((num1%10)+(num2%10)<10){ num1=randInt(10,99); num2=randInt(10,99); }
       answer=num1+num2; questionString=`${num1} + ${num2}`; questionSpeak=`${num1} mais ${num2}`;
     } else if (tag==='sub_le20'){
-      num1=randInt(0,20); num2=randInt(0,20);
-      if (num2>num1) [num1,num2]=[num2,num1];
+      // Padrão B (misto): garante empréstimo em parte das questões
+      gameState.v17._borrowStreak = gameState.v17._borrowStreak || 0;
+      const forceBorrow = (gameState.v17._borrowStreak >= 2) || (Math.random() < 0.55);
+      if (forceBorrow){
+        // empréstimo: num1>=10 e unidades de num1 < unidades de num2
+        num1=randInt(10,20); num2=randInt(1,19);
+        if (num2>num1) [num1,num2]=[num2,num1];
+        while(!(num1>=10 && (num1%10) < (num2%10)) || (num2>num1)){
+          num1=randInt(10,20); num2=randInt(1,19);
+          if (num2>num1) [num1,num2]=[num2,num1];
+        }
+        gameState.v17._borrowStreak = 0;
+      } else {
+        num1=randInt(0,20); num2=randInt(0,20);
+        if (num2>num1) [num1,num2]=[num2,num1];
+        while(num1>=10 && ((num1%10) < (num2%10))){
+          num1=randInt(0,20); num2=randInt(0,20);
+          if (num2>num1) [num1,num2]=[num2,num1];
+        }
+        gameState.v17._borrowStreak += 1;
+      }
       answer=num1-num2; questionString=`${num1} − ${num2}`; questionSpeak=`${num1} menos ${num2}`;
     } else if (tag==='sub_borrow_2d'){
       num1=randInt(10,99); num2=randInt(10,99);
@@ -3564,15 +5352,31 @@ attachEventListeners();
       const base = randInt(2,15);
       num1=base; num2=2; answer=base*base;
       questionString=`${base}²`; questionSpeak=`${base} ao quadrado`;
+    } else if (tag==='pow_cubes'){
+      const base = randInt(2,10);
+      num1=base; num2=3; answer=base*base*base;
+      questionString=`${base}³`; questionSpeak=`${base} ao cubo`;
     } else if (tag==='root_squares'){
       const base = randInt(2,15);
       num1=base*base; answer=base;
       questionString=`√${num1}`; questionSpeak=`raiz quadrada de ${num1}`;
+    } else if (tag==='root_estimate'){
+      // estimativa leve (Reforço > Avançado). Resposta: arredondar para inteiro mais próximo.
+      const k = randInt(5,19);
+      const delta = randInt(1, Math.max(1, Math.min(2*k-1, 18)));
+      const n = k*k + (Math.random()<0.5 ? delta : -delta);
+      num1 = n;
+      answer = Math.round(Math.sqrt(n));
+      questionString = `√${n} (aprox.)`;
+      questionSpeak = `raiz quadrada de ${n}, aproximadamente`;
     } else if (tag==='mult_0_5'){
       num1=randInt(0,5); num2=randInt(0,10);
       answer=num1*num2; questionString=`${num1} x ${num2}`; questionSpeak=`${num1} vezes ${num2}`;
     } else if (tag==='mult_6_10'){
       num1=randInt(6,10); num2=randInt(0,10);
+      answer=num1*num2; questionString=`${num1} x ${num2}`; questionSpeak=`${num1} vezes ${num2}`;
+    } else if (tag==='mult_11_20'){
+      num1=randInt(11,20); num2=randInt(0,10);
       answer=num1*num2; questionString=`${num1} x ${num2}`; questionSpeak=`${num1} vezes ${num2}`;
     } else if (tag==='mult_mix'){
       num1=randInt(2,12); num2=randInt(2,10);
@@ -3726,10 +5530,10 @@ attachEventListeners();
   const OP_TAGS = {
     'addition': ['add_le20','add_carry_2d','add_basic'],
     'subtraction': ['sub_le20','sub_borrow_2d','sub_basic'],
-    'multiplication': ['mult_0_5','mult_6_10','mult_mix'],
+    'multiplication': ['mult_0_5','mult_6_10','mult_11_20','mult_mix'],
     'division': ['div_exact','div_remainder'],
-    'potenciacao': ['pow_squares'],
-    'radiciacao': ['root_squares']
+    'potenciacao': ['pow_squares','pow_cubes'],
+    'radiciacao': ['root_squares','root_estimate']
   };
 
   function baseFocusOp(){
@@ -3792,6 +5596,107 @@ attachEventListeners();
       return {t, score, a, acc};
     }).sort((x,y)=>y.score - x.score);
     return scored[0].t;
+  }
+
+  
+  function lessonTagForCampaign(operation, level){
+    // mapeia operação/nível de campanha para skillTag
+    const op = operation;
+    const lv = level || 'easy';
+    if (op==='addition'){
+      if (lv==='easy') return 'add_le20';
+      return 'add_carry_2d';
+    }
+    if (op==='subtraction'){
+      if (lv==='easy') return 'sub_le20';
+      return 'sub_borrow_2d';
+    }
+    if (op==='multiplication'){
+      if (lv==='easy') return 'mult_0_5';
+      if (lv==='medium') return 'mult_6_10';
+      return 'mult_11_20';
+    }
+    if (op==='division'){
+      if (lv==='easy') return 'div_exact';
+      return 'div_remainder';
+    }
+    if (op==='potenciacao'){
+      if (lv==='easy') return 'pow_squares';
+      return 'pow_cubes';
+    }
+    if (op==='radiciacao'){
+      // estimativa só no reforço e só no avançado; default usa quadrados perfeitos
+      return 'root_squares';
+    }
+    return deriveSkillTag(op);
+  }
+
+  function campaignIsBase(cfg){
+    return !!(cfg && cfg.type==='campaign' && cfg.campaignId==='base');
+  }
+
+  function make70_30Sequence(n){
+    const total = Math.max(1, Math.floor(n||10));
+    const nLesson = Math.max(1, Math.round(total * 0.70));
+    const nReview = Math.max(0, total - nLesson);
+    const seq = [];
+    for (let i=0;i<nLesson;i++) seq.push('lesson');
+    for (let i=0;i<nReview;i++) seq.push('review');
+    // shuffle simples
+    for (let i=seq.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      const tmp=seq[i]; seq[i]=seq[j]; seq[j]=tmp;
+    }
+    // evita streaks longas de review
+    let streak=0;
+    for (let i=0;i<seq.length;i++){
+      if (seq[i]==='review') streak++; else streak=0;
+      if (streak>=3){
+        // troca com próximo lesson se existir
+        for (let k=i+1;k<seq.length;k++){
+          if (seq[k]==='lesson'){
+            const tmp=seq[i]; seq[i]=seq[k]; seq[k]=tmp;
+            streak=0;
+            break;
+          }
+    // Guarda baseTime para ajustes (ex.: dobrar tempo ao ativar voz)
+    gameState.baseTime = baseTime;
+        }
+      }
+    }
+    return seq;
+  }
+
+  function buildCampaignPlan(cfg, operation, level){
+    const totalQ = (cfg && Number.isFinite(cfg.totalQuestions)) ? cfg.totalQuestions : 10;
+    const seq = make70_30Sequence(totalQ);
+    const lessonTag = lessonTagForCampaign(operation, level);
+    const plan = [];
+    for (let i=0;i<seq.length;i++){
+      if (seq[i]==='lesson'){
+        plan.push({mode:'lesson', op: operation, tag: lessonTag});
+      } else {
+        if (campaignIsBase(cfg)){
+          // Base: revisão apenas da mesma operação
+          const tags = OP_TAGS[operation] || [lessonTag];
+          // remove tags incompatíveis (root_estimate e pow_cubes ficam como opcional no avançado; aqui só se existir)
+          const pick = pickReviewTag(tags);
+          plan.push({mode:'review', op: operation, tag: pick});
+        } else {
+          // Reforço: revisão mix por pesos de operações
+          const op = pickReviewOperation();
+          const tags = OP_TAGS[op] || [deriveSkillTag(op)];
+          // raiz estimativa só se habilitada no avançado
+          const filtered = tags.filter(t=>{
+            if (t==='root_estimate') return !!(gameState.v19 && gameState.v19.rootEstimateEnabled);
+            return true;
+          });
+          const pick = pickReviewTag(filtered.length ? filtered : tags);
+          plan.push({mode:'review', op: op, tag: pick});
+        }
+      }
+    }
+    return {seq: plan, i:0, key: `${cfg.campaignId||'camp'}|${operation}|${level}|${totalQ}`};
   }
 
   function pickReviewTag(fromTags){
@@ -3881,8 +5786,22 @@ attachEventListeners();
     const cfg = gameState.sessionConfig;
     // Em campanha/minigame/review usamos skillTags
     let tag = deriveSkillTag(operation);
+    // Campanha: 70/30 (lesson vs review)
+    if (cfg && cfg.type==='campaign'){
+      gameState.v19 = gameState.v19 || { rootEstimateEnabled: false };
+      const key = `${cfg.campaignId||'camp'}|${operation}|${gameState.currentLevel}|${cfg.totalQuestions||''}`;
+      if (!gameState.v17.reviewPlan || gameState.v17.reviewPlan.key !== key){
+        gameState.v17.reviewPlan = buildCampaignPlan(cfg, operation, gameState.currentLevel);
+      }
+      const plan = gameState.v17.reviewPlan;
+      const step = plan.seq[Math.min(plan.i, plan.seq.length-1)];
+      plan.i = Math.min(plan.i+1, plan.seq.length);
+      gameState.currentOperation = step.op;
+      tag = step.tag;
+    }
     // Se for minigame ou revisão em reforço, pode sortear operação e tag
     if (cfg && cfg.type==='mission'){
+
       // Missões 5 min: seleciona habilidade por estratégia (Base = mesma operação; Reforço = misto com pesos)
       const mtype = cfg.missionType || 'review';
       const tagPick = pickMissionTag(mtype);
@@ -4054,7 +5973,41 @@ attachEventListeners();
       setAnswerMode(cur==='typed' ? 'mcq' : 'typed');
     });
   }
+  
+// v19.1 — Teclado numérico para respostas digitadas (turma fraca)
+function setupTypedKeypad(){
+  const pad = document.getElementById('typed-keypad');
+  if (!pad || !typedInput) return;
+  pad.addEventListener('click', (ev)=>{
+    const b = ev.target && ev.target.closest ? ev.target.closest('button[data-k]') : null;
+    if (!b) return;
+    const k = b.getAttribute('data-k');
+    if (!k) return;
+    ev.preventDefault();
+    typedInput.focus();
+    if (k === 'bs'){
+      typedInput.value = typedInput.value.slice(0, -1);
+      return;
+    }
+    if (k === 'clr'){
+      typedInput.value = '';
+      return;
+    }
+    if (k === 'ok'){
+      submitTyped();
+      return;
+    }
+    // número
+    if (/^\d$/.test(k)){
+      // evita números absurdos (limite suave)
+      if (typedInput.value.length >= 4) return;
+      typedInput.value += k;
+    }
+  });
+}
+
   if (btnSubmitTyped) btnSubmitTyped.addEventListener('click', submitTyped);
+  setupTypedKeypad();
   if (typedInput){
     typedInput.addEventListener('keydown', (e)=>{
       if (e.key === 'Enter') submitTyped();
@@ -4082,7 +6035,7 @@ attachEventListeners();
   // Rewire Revisão do dia para sessão inteligente (70/30)
   const btnOpenReview = document.getElementById('btn-open-review');
   if (btnOpenReview){
-    btnOpenReview.addEventListener('click', ()=>{
+    safeOn(btnOpenReview, 'click', ()=>{
       // inicia sessão smartReview (10 questões)
       const cid = selectedCampaign();
       const op = (cid==='base') ? (gameState.currentOperation || 'addition') : pickReviewOperation();

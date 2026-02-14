@@ -30,30 +30,74 @@
       <p class="muted">Importe relatórios por QR (rápido) ou colando o código. Tudo funciona <strong>offline</strong>.</p>
       <div class="mm-row">
         <a class="main-btn link-btn" href="index.html">⬅ Voltar ao app</a>
-        <a class="main-btn link-btn" href="relatorio.html">📄 Abrir relatório do aluno</a>
+        <a class="main-btn link-btn" href="relatorio.html">📄 Abrir relatório do estudante</a>
       </div>
     </header>
 
     <div class="grid2">
       <div class="info-card">
         <h3>Importar relatório (MMR1)</h3>
+<div class="mm-row" style="margin-top:10px;flex-direction:column;align-items:stretch;gap:10px;">
+          <button id="btn-scan" class="main-btn" type="button" style="font-size:1.15em;padding:18px 16px;border-radius:18px;">📷 Escanear QR (câmera)</button>
+          <button id="btn-paste" class="main-btn" type="button" style="font-size:1.05em;padding:16px 16px;border-radius:18px;background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.35);">⌨️ Colar código</button>
 
-        <label>Cole o código do aluno
-          <textarea id="inp-code"></textarea>
-        </label>
+          
 
-        <div class="mm-row" style="margin-top:10px;">
-          <button id="btn-import" class="main-btn" type="button">Importar</button>
-          <button id="btn-scan" class="main-btn" type="button">📷 Escanear QR</button>
-          <button id="btn-clear" class="main-btn" type="button">Limpar tudo</button>
+          <button id="btn-import-weekly" class="main-btn" type="button" style="font-size:1.05em;padding:16px 16px;border-radius:18px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.35);">🏠→🏫 Importar resumo semanal (JSON)</button>
+          <input id="file-weekly" type="file" accept="application/json,.json" style="display:none;" />
+          <div id="weekly-import-wrap" style="margin-top:10px;">
+            <div class="mm-row">
+              <button id="btn-weekly-paste-json" class="secondary-btn" type="button">Colar JSON</button>
+              <button id="btn-weekly-paste-qr" class="secondary-btn" type="button">Colar código do QR</button>
+            </div>
+
+            <div id="weekly-paste-json" style="display:none;margin-top:10px;">
+              <label class="tiny muted">Cole o JSON do Resumo Semanal (PET_WEEKLY_SUMMARY_v1)</label>
+              <textarea id="inp-weekly-json" placeholder="{...}" style="min-height:110px;"></textarea>
+              <div class="mm-row" style="margin-top:8px;">
+                <button id="btn-import-weekly-json" class="main-btn" type="button">Importar JSON</button>
+                <button id="btn-close-weekly-json" class="secondary-btn" type="button">Fechar</button>
+              </div>
+            </div>
+
+            <div id="weekly-paste-qr" style="display:none;margin-top:10px;">
+              <label class="tiny muted">Cole o texto lido do QR (formato PETWS1|...)</label>
+              <input id="inp-weekly-qrchunk" class="mm-input" placeholder="PETWS1|id|1/3|..." />
+              <div class="mm-row" style="margin-top:8px;">
+                <button id="btn-add-weekly-qrchunk" class="main-btn" type="button">Adicionar parte</button>
+                <button id="btn-reset-weekly-qr" class="secondary-btn" type="button">Resetar</button>
+                <button id="btn-close-weekly-qr" class="secondary-btn" type="button">Fechar</button>
+              </div>
+              <p id="weekly-qr-progress" class="tiny muted" style="margin-top:8px;">Aguardando partes...</p>
+              <textarea id="weekly-qr-debug" readonly style="display:none;min-height:70px;"></textarea>
+              <p class="tiny muted">Dica: se você não tiver leitor dentro do navegador, use a câmera/leitor de QR do celular, copie o texto e cole aqui.</p>
+            </div>
+          </div>
+
+<div id="paste-wrap" style="display:none;margin-top:8px;">
+            <label class="tiny muted">Cole aqui o código do relatório (MMR1)</label>
+            <textarea id="inp-code" placeholder="Cole o código aqui..."></textarea>
+            <div class="mm-row" style="margin-top:10px;">
+              <button id="btn-import" class="main-btn" type="button">Importar</button>
+            </div>
+            <p class="tiny muted">Se o navegador não suportar câmera/QR, use “Colar código”.</p>
+          </div>
+
+          <details style="margin-top:4px;">
+            <summary class="tiny muted" style="cursor:pointer;">Mais</summary>
+            <div style="margin-top:10px;">
+              <button id="btn-clear" class="main-btn" type="button" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);">Limpar tudo</button>
+            </div>
+          </details>
         </div>
 
         <div id="video-wrap">
+
           <video id="qr-video" autoplay playsinline></video>
           <div class="mm-row">
             <button id="btn-stop-scan" class="main-btn" type="button">Parar</button>
           </div>
-          <p class="tiny muted">Dica: aponte para o QR na tela do aluno.</p>
+          <p class="tiny muted">Dica: aponte para o QR na tela do estudante.</p>
         </div>
 
         <p class="tiny muted">Se o navegador não suportar câmera/QR, copie e cole o código.</p>
@@ -86,6 +130,19 @@
           <h3>Resumo da turma</h3>
           <p class="muted">Importe relatórios para ver métricas.</p>
         </div>
+
+        <div class="info-card" style="margin-top:10px;">
+          <h3>Intervenção pronta (2 passos)</h3>
+          <ol id="interv-list" style="margin:8px 0 0 18px;">
+            <li class="muted">Importe relatórios para sugerir intervenção.</li>
+          </ol>
+          <pre id="interv-rec" style="white-space:pre-wrap;margin-top:10px;padding:12px;border-radius:16px;background:rgba(0,0,0,0.04);border:1px solid rgba(0,0,0,0.08);font-size:0.95em;"></pre>
+          <div class="mm-row" style="margin-top:10px;">
+            <button id="btn-copy-rec" class="main-btn" type="button">Copiar recomendação (WhatsApp)</button>
+          </div>
+          <p class="tiny muted" style="margin-top:8px;">Objetivo: 1 missão por estudante hoje (sem pressa). Foque nas 3 fragilidades.</p>
+        </div>
+
         <div id="intervention" class="info-card" style="margin-top:10px;">
           <h3>Intervenção pronta (2 passos)</h3>
           <p class="muted tiny">1) Veja a maior dificuldade · 2) Aplique uma ação curta (campanha/mission) + tarefa de casa simples.</p>
@@ -105,7 +162,7 @@
         <table class="table" id="tbl">
           <thead>
             <tr>
-              <th>Aluno</th>
+              <th>Estudante</th>
               <th>Turma</th>
               <th>Período</th>
               <th>Desempenho</th>
@@ -115,9 +172,84 @@
           <tbody id="tbl-body"></tbody>
         </table>
       </div>
+    
+    <div class="info-card" style="margin-top:12px;">
+      <h3>Resumos semanais (Casa → Escola)</h3>
+      <div class="tiny muted" id="weekly-count-text">0 resumos.</div>
+      
+      <div class="info-card" id="pet-analytics-card" style="margin-top:10px;">
+        <h3>📊 Comportamento (dados deste dispositivo)</h3>
+        <p class="muted">Mostra padrões de estudo <strong>somente</strong> se o aluno usou este mesmo celular/computador. Se estiver vazio, é porque ainda não há sessões registradas aqui.</p>
+
+        <div class="mm-row" style="flex-wrap:wrap;gap:8px;margin-top:10px;align-items:flex-end;">
+          <div style="flex:1;min-width:220px;">
+            <label class="tiny muted" for="pet-skill-filter">Filtro (habilidade/modo)</label>
+            <select id="pet-skill-filter">
+              <option value="__all__">Todas</option>
+            </select>
+          </div>
+          <button id="btn-pet-refresh" class="main-btn" type="button" style="padding:12px 14px;border-radius:14px;">🔄 Atualizar</button>
+          <button id="btn-pet-clear" class="main-btn" type="button" style="padding:12px 14px;border-radius:14px;background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.35);">🧹 Limpar dados locais</button>
+        </div>
+
+        <div class="grid2" style="margin-top:12px;">
+          <div class="info-card" style="margin:0;">
+            <h4 style="margin:0 0 6px 0;">Consistência</h4>
+            <p style="margin:0;">Sessões (7 dias): <strong id="pet7">—</strong></p>
+            <p class="tiny muted" style="margin:6px 0 0 0;">Meta: 3–5/semana.</p>
+          </div>
+
+          <div class="info-card" style="margin:0;">
+            <h4 style="margin:0 0 6px 0;">Precisão</h4>
+            <p style="margin:0;">Média (últimas 5): <strong><span id="petAcc5">—</span>%</strong></p>
+            <p class="tiny muted" style="margin:6px 0 0 0;">Referência: ≥85% para consolidar.</p>
+          </div>
+
+          <div class="info-card" style="margin:0;">
+            <h4 style="margin:0 0 6px 0;">Velocidade</h4>
+            <p style="margin:0;">Tempo médio (últimas 5): <strong id="petAvg5">—</strong></p>
+            <p class="tiny muted" style="margin:6px 0 0 0;">Só conta quando há precisão mínima (evita “chute rápido”).</p>
+          </div>
+
+          <div class="info-card" style="margin:0;">
+            <h4 style="margin:0 0 6px 0;">Erros recorrentes</h4>
+            <p style="margin:0;">Top 3: <strong id="petErrTop">—</strong></p>
+            <p class="tiny muted" style="margin:6px 0 0 0;">Use isso para guiar revisão.</p>
+          </div>
+        </div>
+
+        <div class="info-card" style="margin:10px 0 0 0;">
+          <h4 style="margin:0 0 6px 0;">Diagnóstico curto</h4>
+          <p id="petDiag" style="margin:0;">—</p>
+        </div>
+      </div>
+
+<div id="weekly-class-summary" class="info-card" style="margin-top:10px;">
+        <h3>Visão rápida (últimos 7 dias)</h3>
+        <p class="muted">Importe resumos semanais (JSON) para ver sinais de estudo em casa e dificuldades.</p>
+      </div>
+      <div style="overflow:auto;max-height:55vh;margin-top:10px;">
+        <table class="table" id="weekly-tbl">
+          <thead>
+            <tr>
+              <th>Estudante</th>
+              <th>Turma</th>
+              <th>Uso em casa</th>
+              <th>Desempenho</th>
+              <th>Top dificuldade</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="weekly-tbl-body"></tbody>
+        </table>
+      </div>
     </div>
+
+
   </div>
 
   <script src="professor.js"></script>
+  <div id="vlibras-root"></div>
+  <script src="a11y.js"></script>
 </body>
 </html>

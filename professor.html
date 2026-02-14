@@ -29,10 +29,62 @@
       <h1>👩‍🏫 Painel do Professor</h1>
       <p class="muted">Importe relatórios por QR (rápido) ou colando o código. Tudo funciona <strong>offline</strong>.</p>
       <div class="mm-row">
-        <a class="main-btn link-btn" href="index.html">⬅ Voltar ao app</a>
+        <a class="main-btn link-btn" href="index.school.html">⬅ Voltar ao app</a>
         <a class="main-btn link-btn" href="relatorio.html">📄 Abrir relatório do estudante</a>
       </div>
-    </header>
+    </
+
+    <section class="card" aria-label="Modo Escola">
+      <h2>🏫 Modo Escola (offline)</h2>
+      <p class="muted" style="margin-top:-6px">Crie turmas e alunos no próprio dispositivo. Dados ficam separados por aluno (sem mistura).</p>
+
+      <div class="grid2">
+        <div class="card" style="margin:0">
+          <h3>1) Escola e turma</h3>
+          <label>Nome da escola (opcional)</label>
+          <input id="schoolNameInput" type="text" placeholder="Ex: E. M. João XXIII" />
+
+          <div style="height:10px"></div>
+          <label>Criar turma</label>
+          <div class="mm-row" style="flex-wrap:wrap;gap:10px">
+            <input id="classNameInput" type="text" placeholder="Ex: 6ºA" />
+            <button class="main-btn" id="btnAddClass" type="button">+ Turma</button>
+          </div>
+
+          <div style="height:10px"></div>
+          <label>Turmas</label>
+          <select id="classSelect"></select>
+
+          <div class="mm-row" style="flex-wrap:wrap;gap:10px;margin-top:10px">
+            <button class="main-btn link-btn" id="btnExportClass" type="button">⬇ Exportar turma</button>
+            <label class="main-btn link-btn" for="importClassFile" style="cursor:pointer">⬆ Importar turma</label>
+            <input id="importClassFile" type="file" accept="application/json" style="display:none" />
+          </div>
+        </div>
+
+        <div class="card" style="margin:0">
+          <h3>2) Alunos</h3>
+          <label>Adicionar aluno na turma selecionada</label>
+          <div class="mm-row" style="flex-wrap:wrap;gap:10px">
+            <input id="studentNameInput" type="text" placeholder="Nome do aluno (Ex: João)" />
+            <button class="main-btn" id="btnAddStudent" type="button">+ Aluno</button>
+          </div>
+
+          <div style="height:10px"></div>
+          <label>Alunos da turma</label>
+          <select id="studentSelect"></select>
+
+          <div class="mm-row" style="flex-wrap:wrap;gap:10px;margin-top:10px">
+            <button class="main-btn" id="btnSetActive" type="button">✅ Definir como aluno ativo</button>
+            <button class="main-btn link-btn" id="btnResetActive" type="button">🧽 Limpar aluno ativo</button>
+          </div>
+
+          <p class="muted" id="activeInfo" style="margin-top:10px"></p>
+        </div>
+      </div>
+    </section>
+
+header>
 
     <div class="grid2">
       <div class="info-card">
@@ -176,55 +228,7 @@
     <div class="info-card" style="margin-top:12px;">
       <h3>Resumos semanais (Casa → Escola)</h3>
       <div class="tiny muted" id="weekly-count-text">0 resumos.</div>
-      
-      <div class="info-card" id="pet-analytics-card" style="margin-top:10px;">
-        <h3>📊 Comportamento (dados deste dispositivo)</h3>
-        <p class="muted">Mostra padrões de estudo <strong>somente</strong> se o aluno usou este mesmo celular/computador. Se estiver vazio, é porque ainda não há sessões registradas aqui.</p>
-
-        <div class="mm-row" style="flex-wrap:wrap;gap:8px;margin-top:10px;align-items:flex-end;">
-          <div style="flex:1;min-width:220px;">
-            <label class="tiny muted" for="pet-skill-filter">Filtro (habilidade/modo)</label>
-            <select id="pet-skill-filter">
-              <option value="__all__">Todas</option>
-            </select>
-          </div>
-          <button id="btn-pet-refresh" class="main-btn" type="button" style="padding:12px 14px;border-radius:14px;">🔄 Atualizar</button>
-          <button id="btn-pet-clear" class="main-btn" type="button" style="padding:12px 14px;border-radius:14px;background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.35);">🧹 Limpar dados locais</button>
-        </div>
-
-        <div class="grid2" style="margin-top:12px;">
-          <div class="info-card" style="margin:0;">
-            <h4 style="margin:0 0 6px 0;">Consistência</h4>
-            <p style="margin:0;">Sessões (7 dias): <strong id="pet7">—</strong></p>
-            <p class="tiny muted" style="margin:6px 0 0 0;">Meta: 3–5/semana.</p>
-          </div>
-
-          <div class="info-card" style="margin:0;">
-            <h4 style="margin:0 0 6px 0;">Precisão</h4>
-            <p style="margin:0;">Média (últimas 5): <strong><span id="petAcc5">—</span>%</strong></p>
-            <p class="tiny muted" style="margin:6px 0 0 0;">Referência: ≥85% para consolidar.</p>
-          </div>
-
-          <div class="info-card" style="margin:0;">
-            <h4 style="margin:0 0 6px 0;">Velocidade</h4>
-            <p style="margin:0;">Tempo médio (últimas 5): <strong id="petAvg5">—</strong></p>
-            <p class="tiny muted" style="margin:6px 0 0 0;">Só conta quando há precisão mínima (evita “chute rápido”).</p>
-          </div>
-
-          <div class="info-card" style="margin:0;">
-            <h4 style="margin:0 0 6px 0;">Erros recorrentes</h4>
-            <p style="margin:0;">Top 3: <strong id="petErrTop">—</strong></p>
-            <p class="tiny muted" style="margin:6px 0 0 0;">Use isso para guiar revisão.</p>
-          </div>
-        </div>
-
-        <div class="info-card" style="margin:10px 0 0 0;">
-          <h4 style="margin:0 0 6px 0;">Diagnóstico curto</h4>
-          <p id="petDiag" style="margin:0;">—</p>
-        </div>
-      </div>
-
-<div id="weekly-class-summary" class="info-card" style="margin-top:10px;">
+      <div id="weekly-class-summary" class="info-card" style="margin-top:10px;">
         <h3>Visão rápida (últimos 7 dias)</h3>
         <p class="muted">Importe resumos semanais (JSON) para ver sinais de estudo em casa e dificuldades.</p>
       </div>
@@ -248,7 +252,7 @@
 
   </div>
 
-  <script src="professor.js"></script>
+  <script src="professor.school.js"></script>
   <div id="vlibras-root"></div>
   <script src="a11y.js"></script>
 </body>

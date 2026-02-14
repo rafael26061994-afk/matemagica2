@@ -1198,241 +1198,264 @@ function copyWhats(){
 
 
 
-/* =========================================================
-   PET — Painel Analítico Local (somente neste dispositivo)
-   Marcador: PET_LOCAL_ANALYTICS_v1
-   Lê sessões do localStorage (se existirem) e mostra 4 cards:
-   Consistência, Precisão, Velocidade, Erros recorrentes + Diagnóstico.
-   ========================================================= */
-(function(){
-  'use strict';
 
-  const KEY_CANDIDATES = ['pet_sessions', 'pet_sessoes', 'pet_sessoes_v1'];
+// ===============================
+// PET Escolar Offline v1 — Turmas/Alunos + Export/Import (sem servidor)
+// ===============================
+const PET_SCHOOL_KEY = 'pet_school_v1';
+const PET_PER_STUDENT_KEYS = [
+  'matemagica_profile_v1',
+  'matemagica_sessions_v1',
+  'matemagica_attempts_v1',
+  'matemagica_mastery_v1',
+  'matemagica_missions_v1',
+  'matemagica_mult_progress_map_v1',
+  'matemagica_path_progress_v1',
+  'matemagica_daily_v1',
+  'matemagica_mentor_v1',
+  'matemagica_high_scores_v1',
+  'matemagica_xp',
+  'matemagica_errors',
+  'matemagica_diff_focus',
+  'matemagica_mult_cfg',
+  'pet_study_progress_v1',
+  'pet_seen_train_ids_v1'
+];
 
-  function readJSON(key){
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch {
-      return null;
+function petSchoolLoad(){
+  try{ const raw = localStorage.getItem(PET_SCHOOL_KEY); return raw ? JSON.parse(raw) : { schoolName:'', classes:[], active:{classId:null, studentId:null} }; }
+  catch(_){ return { schoolName:'', classes:[], active:{classId:null, studentId:null} }; }
+}
+function petSchoolSave(obj){
+  try{ localStorage.setItem(PET_SCHOOL_KEY, JSON.stringify(obj)); }catch(_){}
+}
+function petId(prefix){
+  const rnd = Math.random().toString(36).slice(2,7).toUpperCase();
+  const ts = Date.now().toString(36).slice(-4).toUpperCase();
+  return `${prefix}-${ts}${rnd}`;
+}
+function petKeyForStudent(baseKey, studentId){
+  if(!baseKey || !studentId) return baseKey;
+  // só sufixa chaves que o app usa como dados do aluno
+  if(PET_PER_STUDENT_KEYS.includes(baseKey)) return `${baseKey}__${studentId}`;
+  return baseKey;
+}
+
+function initSchoolPanel(){
+  const elSchoolName = document.getElementById('schoolNameInput');
+  const elClassName = document.getElementById('classNameInput');
+  const elStudentName = document.getElementById('studentNameInput');
+  const elClassSel = document.getElementById('classSelect');
+  const elStudentSel = document.getElementById('studentSelect');
+  const elActiveInfo = document.getElementById('activeInfo');
+
+  const btnAddClass = document.getElementById('btnAddClass');
+  const btnAddStudent = document.getElementById('btnAddStudent');
+  const btnSetActive = document.getElementById('btnSetActive');
+  const btnResetActive = document.getElementById('btnResetActive');
+  const btnExportClass = document.getElementById('btnExportClass');
+  const inpImport = document.getElementById('importClassFile');
+
+  if(!elClassSel || !elStudentSel) return; // página sem painel
+
+  function render(){
+    const sch = petSchoolLoad();
+
+    if(elSchoolName) elSchoolName.value = sch.schoolName || '';
+
+    // classes
+    elClassSel.innerHTML = (sch.classes||[]).map(c=>{
+      const sel = sch.active && sch.active.classId===c.classId ? 'selected' : '';
+      return `<option value="${c.classId}" ${sel}>${c.className || c.classId}</option>`;
+    }).join('');
+
+    // se não existe classe selecionada, pega primeira
+    let classId = elClassSel.value || (sch.classes && sch.classes[0] && sch.classes[0].classId) || '';
+    if(classId && (!sch.active || !sch.active.classId)){
+      sch.active = sch.active || {classId:null, studentId:null};
+      sch.active.classId = classId;
+      petSchoolSave(sch);
     }
-  }
 
-  function getSessions(){
-    for (const k of KEY_CANDIDATES) {
-      const v = readJSON(k);
-      if (Array.isArray(v)) return { key: k, sessions: v };
-    }
-    return { key: null, sessions: [] };
-  }
+    const cls = (sch.classes||[]).find(c=>c.classId===classId);
+    const students = (cls && cls.students) ? cls.students : [];
 
-  function asNumber(x){
-    const n = Number(x);
-    return Number.isFinite(n) ? n : null;
-  }
+    elStudentSel.innerHTML = students.map(s=>{
+      const sel = sch.active && sch.active.studentId===s.studentId ? 'selected' : '';
+      return `<option value="${s.studentId}" ${sel}>${s.name || s.studentId}</option>`;
+    }).join('');
 
-  function sessionDate(s){
-    // Prefer explicit date fields
-    const d = s?.date || s?.data;
-    if (typeof d === 'string') {
-      const dt = new Date(d);
-      if (!isNaN(dt.getTime())) return dt;
-    }
-    // Fallback to timestamps
-    const ts = s?.tsStart || s?.startTs || s?.timestamp;
-    if (typeof ts === 'number') {
-      const dt = new Date(ts);
-      if (!isNaN(dt.getTime())) return dt;
-    }
-    if (typeof ts === 'string') {
-      const dt = new Date(ts);
-      if (!isNaN(dt.getTime())) return dt;
-    }
-    return null;
-  }
-
-  function skillKeyOf(s){
-    return s?.skillKey || s?.skill || s?.habilidade || s?.key || '__unknown__';
-  }
-
-  function accuracyOf(s){
-    const acc = asNumber(s?.accuracy ?? s?.percentual);
-    if (acc !== null) return acc;
-    const correct = asNumber(s?.correct ?? s?.acertos);
-    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
-    if (correct !== null && attempts && attempts > 0) return (correct / attempts) * 100;
-    return null;
-  }
-
-  function avgSecOf(s){
-    // Prefer avgSec if available
-    const avg = asNumber(s?.avgSec ?? s?.tempoMedio);
-    if (avg !== null) return avg;
-
-    const durationSec = asNumber(s?.durationSec ?? s?.duracaoSec ?? s?.tempoTotalSec);
-    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
-    if (durationSec !== null && attempts && attempts > 0) return durationSec / attempts;
-    return null;
-  }
-
-  function isCompleted(s){
-    if (typeof s?.completed === 'boolean') return s.completed;
-    if (typeof s?.concluida === 'boolean') return s.concluida;
-    // default: if has attempts assume completed
-    const attempts = asNumber(s?.attempts ?? s?.questoes ?? s?.total ?? s?.totalQuestoes);
-    return attempts !== null && attempts > 0;
-  }
-
-  function isSuspect(s){
-    return !!(s?.suspect || s?.suspectSession);
-  }
-
-  function withinLastDays(dt, days){
-    if (!dt) return false;
-    const now = new Date();
-    const ms = days * 24 * 60 * 60 * 1000;
-    return (now.getTime() - dt.getTime()) <= ms;
-  }
-
-  function topErrors(sessions, topN=3){
-    const counter = Object.create(null);
-    for (const s of sessions) {
-      const errs = s?.errorsTop || s?.errosTop || s?.erros || s?.errors;
-      if (!errs) continue;
-      const arr = Array.isArray(errs) ? errs : [];
-      for (const e of arr) {
-        const k = String(e);
-        counter[k] = (counter[k] || 0) + 1;
+    const act = sch.active || {};
+    if(elActiveInfo){
+      if(act.studentId){
+        const cname = cls ? (cls.className||cls.classId) : (act.classId||'');
+        const sObj = students.find(x=>x.studentId===act.studentId);
+        const sname = sObj ? sObj.name : act.studentId;
+        elActiveInfo.textContent = `Ativo agora: ${cname} • ${sname}`;
+      } else {
+        elActiveInfo.textContent = 'Nenhum aluno ativo definido.';
       }
     }
-    const entries = Object.entries(counter).sort((a,b)=>b[1]-a[1]).slice(0, topN);
-    if (!entries.length) return 'Nenhum';
-    return entries.map(([k,v]) => `${k} (${v})`).join(', ');
   }
 
-  function mean(nums){
-    const arr = nums.filter(n => Number.isFinite(n));
-    if (!arr.length) return null;
-    return arr.reduce((a,b)=>a+b,0) / arr.length;
+  function saveSchoolName(){
+    const sch = petSchoolLoad();
+    sch.schoolName = (elSchoolName && elSchoolName.value || '').trim();
+    petSchoolSave(sch);
   }
 
-  function uniq(arr){
-    return Array.from(new Set(arr));
+  function addClass(){
+    const name = (elClassName && elClassName.value || '').trim();
+    if(!name) return alert('Informe o nome da turma (ex: 6ºA).');
+    const sch = petSchoolLoad();
+    const classId = petId('TURMA');
+    sch.classes = sch.classes || [];
+    sch.classes.push({ classId, className:name, students:[] });
+    sch.active = sch.active || {classId:null, studentId:null};
+    sch.active.classId = classId;
+    sch.active.studentId = null;
+    petSchoolSave(sch);
+    if(elClassName) elClassName.value='';
+    render();
   }
 
-  function $(id){ return document.getElementById(id); }
+  function addStudent(){
+    const name = (elStudentName && elStudentName.value || '').trim();
+    if(!name) return alert('Informe o nome do aluno.');
+    const sch = petSchoolLoad();
+    const classId = elClassSel.value;
+    const cls = (sch.classes||[]).find(c=>c.classId===classId);
+    if(!cls) return alert('Selecione uma turma.');
+    cls.students = cls.students || [];
+    const studentId = petId('ALUNO');
+    cls.students.push({ studentId, name, createdAt: Date.now() });
 
-  function refresh(){
-    const { sessions } = getSessions();
-    const sel = $('pet-skill-filter');
-    const filterKey = sel ? sel.value : '__all__';
+    sch.active = sch.active || {classId:null, studentId:null};
+    sch.active.classId = classId;
+    sch.active.studentId = studentId;
 
-    const usable = sessions.filter(s => isCompleted(s) && !isSuspect(s));
-    const filtered = (filterKey && filterKey !== '__all__')
-      ? usable.filter(s => skillKeyOf(s) === filterKey)
-      : usable;
-
-    const last7 = filtered.filter(s => withinLastDays(sessionDate(s), 7)).length;
-
-    const last5 = filtered.slice(-5);
-    const acc5 = mean(last5.map(accuracyOf));
-
-    // velocity only if accuracy >= 70 (avoid "chute rápido")
-    const vel5 = mean(last5.filter(s => (accuracyOf(s) ?? 0) >= 70).map(avgSecOf));
-
-    // Fill UI
-    const el7 = $('pet7'); if (el7) el7.textContent = String(last7);
-
-    const elAcc5 = $('petAcc5');
-    if (elAcc5) elAcc5.textContent = acc5 === null ? '—' : acc5.toFixed(1);
-
-    const elAvg5 = $('petAvg5');
-    if (elAvg5) elAvg5.textContent = vel5 === null ? '—' : `${vel5.toFixed(2)}s/questão`;
-
-    const elErr = $('petErrTop');
-    if (elErr) elErr.textContent = topErrors(last5, 3);
-
-    const diag = $('petDiag');
-    if (diag) diag.textContent = buildDiag(usable, filtered, last7, acc5, vel5);
+    petSchoolSave(sch);
+    if(elStudentName) elStudentName.value='';
+    render();
   }
 
-  function buildDiag(usableAll, usableFiltered, last7, acc5, vel5){
-    if (!usableAll.length) {
-      return 'Sem dados locais de sessões ainda. Para usar este painel, o app precisa registrar e salvar as sessões neste dispositivo.';
-    }
-    if (!usableFiltered.length) {
-      return 'Sem sessões válidas para este filtro (ou foram marcadas como suspeitas).';
-    }
-    const parts = [];
-    if (last7 < 2) parts.push('⚠ Baixa consistência (meta: 3–5 sessões/semana).');
-    else if (last7 <= 5) parts.push('✅ Consistência ok para consolidar.');
-    else parts.push('✅ Frequência alta; cuide para não virar “maratona” cansativa.');
-
-    if (acc5 !== null) {
-      if (acc5 < 70) parts.push('⚠ Precisão baixa: precisa reforço estruturado (voltar 1 passo e revisar erros).');
-      else if (acc5 < 85) parts.push('📈 Em desenvolvimento: manter treino + revisão dirigida pelos erros recorrentes.');
-      else parts.push('🏆 Boa consolidação: pronto para aumentar dificuldade gradualmente.');
-    } else {
-      parts.push('Precisão: dados insuficientes.');
-    }
-
-    if (vel5 !== null && acc5 !== null && acc5 >= 85) {
-      parts.push(vel5 <= 3 ? 'Fluência boa: velocidade já está competitiva.' : 'Fluência em progresso: manter precisão e reduzir tempo aos poucos.');
-    }
-    return parts.join(' ');
+  function setActive(){
+    const sch = petSchoolLoad();
+    sch.active = sch.active || {classId:null, studentId:null};
+    sch.active.classId = elClassSel.value || null;
+    sch.active.studentId = elStudentSel.value || null;
+    petSchoolSave(sch);
+    render();
+    alert('Aluno ativo definido. Abra o app e use normalmente.');
   }
 
-  function rebuildSkillOptions(){
-    const { sessions } = getSessions();
-    const sel = $('pet-skill-filter');
-    if (!sel) return;
-
-    const usable = sessions.filter(s => isCompleted(s) && !isSuspect(s));
-    const keys = uniq(usable.map(skillKeyOf).filter(k => k && k !== '__unknown__'));
-
-    // Reset
-    sel.innerHTML = '';
-    const optAll = document.createElement('option');
-    optAll.value = '__all__';
-    optAll.textContent = 'Todas';
-    sel.appendChild(optAll);
-
-    for (const k of keys.sort()) {
-      const opt = document.createElement('option');
-      opt.value = k;
-      opt.textContent = k;
-      sel.appendChild(opt);
-    }
+  function resetActive(){
+    const sch = petSchoolLoad();
+    sch.active = sch.active || {classId:null, studentId:null};
+    sch.active.studentId = null;
+    petSchoolSave(sch);
+    render();
   }
 
-  function clearLocal(){
-    if (!confirm('Isso vai apagar os dados de sessões PET salvos neste dispositivo (localStorage). Continuar?')) return;
-    for (const k of KEY_CANDIDATES) localStorage.removeItem(k);
-    rebuildSkillOptions();
-    refresh();
-  }
+  function exportClass(){
+    const sch = petSchoolLoad();
+    const classId = elClassSel.value;
+    const cls = (sch.classes||[]).find(c=>c.classId===classId);
+    if(!cls) return alert('Selecione uma turma.');
+    const out = {
+      exportType: 'PET_SCHOOL_OFFLINE_V1',
+      exportedAt: new Date().toISOString(),
+      schoolName: sch.schoolName || '',
+      class: { classId: cls.classId, className: cls.className || '' },
+      students: []
+    };
 
-  function bind(){
-    const btnR = $('btn-pet-refresh');
-    const btnC = $('btn-pet-clear');
-    const sel = $('pet-skill-filter');
-
-    if (btnR) btnR.addEventListener('click', () => { rebuildSkillOptions(); refresh(); });
-    if (btnC) btnC.addEventListener('click', clearLocal);
-    if (sel) sel.addEventListener('change', refresh);
-  }
-
-  // Boot after DOM is ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      bind();
-      rebuildSkillOptions();
-      refresh();
+    (cls.students||[]).forEach(st=>{
+      const data = {};
+      PET_PER_STUDENT_KEYS.forEach(k=>{
+        const raw = localStorage.getItem(petKeyForStudent(k, st.studentId));
+        if(raw != null) data[k] = raw;
+      });
+      out.students.push({ studentId: st.studentId, name: st.name || '', createdAt: st.createdAt||null, data });
     });
-  } else {
-    bind();
-    rebuildSkillOptions();
-    refresh();
+
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    const safe = (cls.className||'turma').replace(/[^a-z0-9]+/gi,'_').toLowerCase();
+    a.href = URL.createObjectURL(blob);
+    a.download = `pet_turma_${safe}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(_){ } }, 500);
   }
-})();
+
+  async function importClassFile(file){
+    try{
+      const txt = await file.text();
+      const obj = JSON.parse(txt);
+      if(!obj || obj.exportType !== 'PET_SCHOOL_OFFLINE_V1') return alert('Arquivo inválido para importação.');
+      const sch = petSchoolLoad();
+      sch.schoolName = (obj.schoolName || sch.schoolName || '').trim();
+      sch.classes = sch.classes || [];
+
+      // remove turma com mesmo id se existir
+      const incomingClassId = obj.class && obj.class.classId ? obj.class.classId : petId('TURMA');
+      sch.classes = sch.classes.filter(c=>c.classId !== incomingClassId);
+
+      const cls = { classId: incomingClassId, className: (obj.class && obj.class.className)||'Turma', students: [] };
+
+      (obj.students||[]).forEach(st=>{
+        const sid = st.studentId || petId('ALUNO');
+        cls.students.push({ studentId: sid, name: st.name||sid, createdAt: st.createdAt||Date.now() });
+
+        const data = st.data || {};
+        Object.keys(data).forEach(k=>{
+          if(PET_PER_STUDENT_KEYS.includes(k)){
+            localStorage.setItem(petKeyForStudent(k, sid), data[k]);
+          }
+        });
+      });
+
+      sch.classes.push(cls);
+      sch.active = sch.active || {classId:null, studentId:null};
+      sch.active.classId = cls.classId;
+      sch.active.studentId = (cls.students[0] && cls.students[0].studentId) || null;
+
+      petSchoolSave(sch);
+      render();
+      alert('Turma importada com sucesso.');
+    }catch(e){
+      console.error(e);
+      alert('Falha ao importar turma.');
+    }
+  }
+
+  // events
+  if(elSchoolName){
+    elSchoolName.addEventListener('change', saveSchoolName);
+    elSchoolName.addEventListener('blur', saveSchoolName);
+  }
+  if(btnAddClass) btnAddClass.addEventListener('click', addClass);
+  if(btnAddStudent) btnAddStudent.addEventListener('click', addStudent);
+  if(btnSetActive) btnSetActive.addEventListener('click', setActive);
+  if(btnResetActive) btnResetActive.addEventListener('click', resetActive);
+  if(btnExportClass) btnExportClass.addEventListener('click', exportClass);
+  if(elClassSel) elClassSel.addEventListener('change', ()=>{ 
+    const sch = petSchoolLoad();
+    sch.active = sch.active || {classId:null, studentId:null};
+    sch.active.classId = elClassSel.value || null;
+    sch.active.studentId = null;
+    petSchoolSave(sch);
+    render(); 
+  });
+  if(inpImport) inpImport.addEventListener('change', (ev)=>{
+    const f = ev.target.files && ev.target.files[0];
+    if(f) importClassFile(f);
+    ev.target.value='';
+  });
+
+  render();
+}
+
+window.addEventListener('load', initSchoolPanel);
+// ===============================

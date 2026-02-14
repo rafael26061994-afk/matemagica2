@@ -150,11 +150,11 @@ function _studyDefault(){
   };
 }
 function studyLoad(){
-  try{ const raw=localStorage.getItem(STUDY_KEY); if(!raw) return _studyDefault();
+  try{ const raw=LS.get(STUDY_KEY); if(!raw) return _studyDefault();
        const obj=JSON.parse(raw); return Object.assign(_studyDefault(), obj);
   }catch(_){ return _studyDefault(); }
 }
-function studySave(st){ try{ localStorage.setItem(STUDY_KEY, JSON.stringify(st)); }catch(_){ } }
+function studySave(st){ try{ LS.set(STUDY_KEY, JSON.stringify(st)); }catch(_){ } }
 function isStudy(){ return gameState && gameState.isRapidMode===false; }
 function studyCanOp(op){ const st=studyLoad(); return !!(st.unlocked && st.unlocked[op]); }
 function studyLockUI(){
@@ -263,10 +263,10 @@ function studyMulEndSession(acc, suspect){
 /* ---------------------------- Onboarding (v20) --------------------------- */
 const ONBOARD_KEY = 'pet_onboarded_v1';
 function shouldShowOnboarding(){
-  try{ return localStorage.getItem(ONBOARD_KEY) !== '1'; }catch(_){ return true; }
+  try{ return LS.get(ONBOARD_KEY) !== '1'; }catch(_){ return true; }
 }
 function markOnboardingDone(){
-  try{ localStorage.setItem(ONBOARD_KEY,'1'); }catch(_){}
+  try{ LS.set(ONBOARD_KEY,'1'); }catch(_){}
 }
 function showOnboarding(){
   const modal = document.getElementById('onboarding-modal');
@@ -302,6 +302,7 @@ function showOnboarding(){
 }
 document.addEventListener('DOMContentLoaded', ()=>{
     wireDifficultiesModal();
+    initSchoolStudentSelector();
 
   try{
     // A11y: garantir aria-label nas alternativas
@@ -316,6 +317,124 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 /* --------------------------- Modo de uso (Celular/PC) --------------------------- */
 const MODE_KEY = 'pet_ui_mode_v1'; // 'mobile' | 'pc'
+
+// ===============================
+// PET Escolar Offline v1 — Key resolver + seletor de aluno (per student)
+// ===============================
+const SCHOOL_KEY = 'pet_school_v1';
+
+// Keys that should be scoped by active student (avoid mixing data on shared devices)
+const PER_STUDENT_KEYS = new Set([
+  'matemagica_profile_v1',
+  'matemagica_sessions_v1',
+  'matemagica_attempts_v1',
+  'matemagica_mastery_v1',
+  'matemagica_missions_v1',
+  'matemagica_mult_progress_map_v1',
+  'matemagica_path_progress_v1',
+  'matemagica_daily_v1',
+  'matemagica_mentor_v1',
+  'matemagica_high_scores_v1',
+  'matemagica_xp',
+  'matemagica_errors',
+  'matemagica_diff_focus',
+  'matemagica_mult_cfg',
+  'pet_study_progress_v1',
+  'pet_seen_train_ids_v1'
+]);
+
+function schoolLoad(){
+  try{ const raw = LS.get(SCHOOL_KEY); return raw ? JSON.parse(raw) : null; }catch(_){ return null; }
+}
+function schoolSave(obj){
+  try{ LS.set(SCHOOL_KEY, JSON.stringify(obj)); }catch(_){ }
+}
+function activeStudentId(){
+  const sch = schoolLoad();
+  const sid = sch && sch.active && sch.active.studentId;
+  return sid ? String(sid) : null;
+}
+function keyFor(baseKey){
+  if(!baseKey || typeof baseKey !== 'string') return baseKey;
+  if(!PER_STUDENT_KEYS.has(baseKey)) return baseKey;
+  const sid = activeStudentId();
+  if(!sid) return baseKey;
+  return `${baseKey}__${sid}`;
+}
+
+// Storage facade (drop-in replacement)
+const LS = {
+  get(key){ try{ return LS.get(keyFor(key)); }catch(_){ return null; } },
+  set(key, val){ try{ LS.set(keyFor(key), val); }catch(_){ } },
+  remove(key){ try{ LS.remove(keyFor(key)); }catch(_){ } }
+};
+
+// UI: seletor de aluno (se existir no index)
+function initSchoolStudentSelector(){
+  try{
+    const sel = document.getElementById('pet-student-select');
+    const bar = document.getElementById('pet-school-bar');
+    const warn = document.getElementById('pet-school-warning');
+    if(!sel || !bar) return; // app não está em modo escola UI
+
+    const sch = schoolLoad();
+    const classes = (sch && Array.isArray(sch.classes)) ? sch.classes : [];
+    const active = (sch && sch.active) ? sch.active : null;
+
+    // Sem configuração
+    if(classes.length === 0){
+      bar.hidden = true;
+      if(warn) warn.hidden = false;
+      return;
+    }
+
+    // Build options (Turma • Aluno)
+    const options = [];
+    classes.forEach(c=>{
+      (c.students||[]).forEach(st=>{
+        options.push({
+          classId: c.classId,
+          studentId: st.studentId,
+          label: `${c.className || c.classId} • ${st.name || st.studentId}`
+        });
+      });
+    });
+
+    if(options.length === 0){
+      bar.hidden = true;
+      if(warn) warn.hidden = false;
+      return;
+    }
+
+    sel.innerHTML = options.map(o=>{
+      const selected = active && active.studentId===o.studentId ? 'selected' : '';
+      return `<option value="${o.studentId}" data-class="${o.classId}" ${selected}>${o.label}</option>`;
+    }).join('');
+
+    // Garantir active student válido
+    if(!active || !active.studentId){
+      const first = options[0];
+      sch.active = { classId: first.classId, studentId: first.studentId };
+      schoolSave(sch);
+      sel.value = first.studentId;
+    }
+
+    sel.addEventListener('change', ()=>{
+      const sid = sel.value;
+      const opt = sel.options[sel.selectedIndex];
+      const cid = opt ? opt.getAttribute('data-class') : null;
+      const sch2 = schoolLoad() || { classes: [] };
+      sch2.active = { classId: cid, studentId: sid };
+      schoolSave(sch2);
+      // reload para aplicar key scoping imediatamente
+      try{ location.reload(); }catch(_){}
+    });
+
+    if(warn) warn.hidden = true;
+    bar.hidden = false;
+  }catch(_){}
+}
+// ===============================
 function getDefaultMode(){
   try{
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -325,13 +444,13 @@ function getDefaultMode(){
 }
 function getUIMode(){
   try{
-    const v = localStorage.getItem(MODE_KEY);
+    const v = LS.get(MODE_KEY);
     return (v==='mobile' || v==='pc') ? v : null;
   }catch(_){ return null; }
 }
 function setUIMode(mode){
   if(mode!=='mobile' && mode!=='pc') return;
-  try{ localStorage.setItem(MODE_KEY, mode); }catch(_){}
+  try{ LS.set(MODE_KEY, mode); }catch(_){}
   applyUIMode(mode);
 }
 function applyUIMode(mode){
@@ -523,7 +642,7 @@ const SESSIONS_KEY = 'matemagica_sessions_v1';
 
 function loadSessions() {
     try {
-        const raw = localStorage.getItem(SESSIONS_KEY);
+        const raw = LS.get(SESSIONS_KEY);
         const arr = raw ? JSON.parse(raw) : [];
         return Array.isArray(arr) ? arr : [];
     } catch (_) {
@@ -532,7 +651,7 @@ function loadSessions() {
 }
 
 function saveSessions(arr) {
-    try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(arr)); } catch (_) {}
+    try { LS.set(SESSIONS_KEY, JSON.stringify(arr)); } catch (_) {}
 }
 
 function appendSession(sessionObj) {
@@ -544,203 +663,9 @@ function appendSession(sessionObj) {
 }
 
 
-
-/* ================== PET Intervenções (MVP) ==================
-   Objetivo: reduzir abandono e acelerar domínio com regras simples.
-   - Sem "IA fake"
-   - Gatilhos claros
-   - Persistência local (no dispositivo)
-   Marcador: PET_INTERVENTIONS_v20_13
-============================================================= */
-const PET_INTERVENTIONS_KEY = 'pet_interventions_v1';
-
-function petLoadInterventions(){
-    try{
-        const raw = localStorage.getItem(PET_INTERVENTIONS_KEY);
-        const obj = raw ? JSON.parse(raw) : {};
-        return (obj && typeof obj === 'object') ? obj : {};
-    }catch(_){ return {}; }
-}
-function petSaveInterventions(map){
-    try{ localStorage.setItem(PET_INTERVENTIONS_KEY, JSON.stringify(map||{})); }catch(_){}
-}
-function petGetPlan(skillKey){
-    const map = petLoadInterventions();
-    const plan = map && map[skillKey];
-    return plan && typeof plan === 'object' ? plan : null;
-}
-function petSetPlan(skillKey, plan){
-    const map = petLoadInterventions();
-    map[skillKey] = Object.assign({createdTs: Date.now()}, plan||{});
-    petSaveInterventions(map);
-}
-function petClearPlan(skillKey){
-    const map = petLoadInterventions();
-    if (map && map[skillKey]){ delete map[skillKey]; petSaveInterventions(map); }
-}
-
-function petIsoDate(ts){
-    try{
-        const d = new Date(ts||Date.now());
-        const y = d.getFullYear();
-        const m = String(d.getMonth()+1).padStart(2,'0');
-        const day = String(d.getDate()).padStart(2,'0');
-        return `${y}-${m}-${day}`;
-    }catch(_){ return ''; }
-}
-
-function petSkillKeyFromState(){
-    // "mesma habilidade": operação + nível + modo + variações relevantes
-    const op = String(gameState.currentOperation || 'unknown');
-    const lvl = String(gameState.currentLevel || 'medium');
-    const mode = (gameState.sessionConfig && gameState.sessionConfig.type) ? String(gameState.sessionConfig.type) : (gameState.isRapidMode ? 'rapido' : 'estudo');
-    let mult = '';
-    if (op === 'multiplication' && gameState.multiplication){
-        const mm = gameState.multiplication;
-        const mMode = mm.mode || '';
-        const t = Number.isInteger(mm.tabuada) ? mm.tabuada : (Number.isInteger(mm.lockTabuada) ? mm.lockTabuada : null);
-        const multMin = Number.isInteger(mm.multMin) ? mm.multMin : null;
-        const multMax = Number.isInteger(mm.multMax) ? mm.multMax : null;
-        const trailKey = mm.trailRangeKey || '';
-        mult = `|m:${mMode}|t:${t!=null?t:'x'}|mul:${multMin!=null?multMin:'x'}-${multMax!=null?multMax:'x'}|trail:${trailKey}`;
-    }
-    return `${op}|${lvl}|${mode}${mult}`;
-}
-
-function petNormalizeErrorLabel(err){
-    if (!err || typeof err !== 'object') return null;
-    const op = String(err.operation || '');
-    const n1 = (err.num1!=null && err.num1!==undefined) ? Number(err.num1) : null;
-    const n2 = (err.num2!=null && err.num2!==undefined) ? Number(err.num2) : null;
-    if (op === 'multiplication' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}x${n2}`;
-    if (op === 'division' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}÷${n2}`;
-    if (op === 'addition' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}+${n2}`;
-    if (op === 'subtraction' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}-${n2}`;
-    if (op === 'exponentiation' && Number.isFinite(n1) && Number.isFinite(n2)) return `${n1}^${n2}`;
-    if (typeof err.question === 'string') return err.question.slice(0, 18);
-    return null;
-}
-
-function petErrorsTopThisSession(maxN=5){
-    try{
-        const startTs = Number.isFinite(gameState.sessionStartTs) ? gameState.sessionStartTs : (Date.now()-86400000);
-        const arr = Array.isArray(gameState.errors) ? gameState.errors : [];
-        const inSession = arr.filter(e => Number(e.timestamp||0) >= startTs);
-        const counts = {};
-        inSession.forEach(e=>{
-            const lab = petNormalizeErrorLabel(e);
-            if (!lab) return;
-            counts[lab] = (counts[lab]||0)+1;
-        });
-        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,maxN).map(([k])=>k);
-    }catch(_){ return []; }
-}
-
-function petAvgSec(){
-    try{
-        const times = Array.isArray(gameState.answerTimes) ? gameState.answerTimes : [];
-        if (!times.length) return null;
-        const sum = times.reduce((a,b)=>a+Number(b||0),0);
-        const avgMs = sum / times.length;
-        return Math.round((avgMs/1000)*100)/100;
-    }catch(_){ return null; }
-}
-
-function petRecentSessionsBySkill(skillKey, n=5){
-    try{
-        const arr = loadSessions();
-        const out = [];
-        for (const s of arr){
-            if (!s) continue;
-            const sk = s.skillKey || s.skill_key || null;
-            const suspect = !!(s.suspect || s.suspectSession);
-            if (suspect) continue;
-            if (sk === skillKey){
-                out.push(s);
-                if (out.length>=n) break;
-            }
-        }
-        return out;
-    }catch(_){ return []; }
-}
-
-function petDecideNextPlan(summary){
-    // summary: {skillKey, accuracy, errors, attempts, suspect, avgSec, op, level}
-    if (summary.suspect) return {kind:'none', note:'Sessão suspeita (sem plano).', autoApply:false};
-
-    // Regra de recuperação: 2 sessões seguidas <70% OU 1 sessão <60% (mesma habilidade)
-    const recent = petRecentSessionsBySkill(summary.skillKey, 2);
-    const last1 = recent[0] || null;
-    const last2 = recent[1] || null;
-    const lastAcc = last1 ? Number(last1.accuracy ?? (last1.correct/Math.max(1,last1.questions))*100) : null;
-    const prevAcc = last2 ? Number(last2.accuracy ?? (last2.correct/Math.max(1,last2.questions))*100) : null;
-
-    if (summary.accuracy < 60 || (lastAcc!=null && prevAcc!=null && lastAcc < 70 && prevAcc < 70)){
-        return {
-            kind:'recovery',
-            totalQuestions: 12,
-            forceStudyMode: true,
-            disableTimer: true,
-            guided: true,
-            note:'Recuperação: reduzir carga + foco em erros.'
-        };
-    }
-
-    // Progressão segura: 2 sessões seguidas ≥85% (mesma habilidade) => subir 1 nível
-    if (lastAcc!=null && prevAcc!=null && lastAcc >= 85 && prevAcc >= 85){
-        const nextLevel = (function(lvl){
-            const s = String(lvl||'medium');
-            if (s==='easy') return 'medium';
-            if (s==='medium') return 'advanced';
-            return 'advanced';
-        })(summary.level);
-        if (nextLevel !== summary.level){
-            return {
-                kind:'progress',
-                overrideLevel: nextLevel,
-                autoApply: true,
-                note:'Progressão: 2 sessões fortes seguidas.'
-            };
-        }
-    }
-
-    // Revisão inteligente: se há erros recorrentes, reservar parte da próxima sessão
-    if ((summary.errorsTop||[]).length >= 2){
-        return {
-            kind:'review',
-            totalQuestions: 20,
-            reviewPct: 0.30,
-            guided: true,
-            note:'Revisão: priorizar erros recorrentes.'
-        };
-    }
-
-    return {kind:'none', note:'Sem intervenção.', autoApply:false};
-}
-
-/** Ativação imediata (anti-frustração): encurta a sessão em andamento */
-function petMaybeActivateShortSession(){
-    try{
-        if (gameState.isRapidMode) return;
-        const attempts = (gameState.acertos||0)+(gameState.erros||0);
-        if (attempts < 8) return;
-        const acc = attempts>0 ? (gameState.acertos/attempts)*100 : 100;
-        if (acc >= 70) return;
-        if ((gameState.erros||0) < 6) return;
-        if (!Number.isFinite(gameState.totalQuestions) || gameState.totalQuestions === Infinity) return;
-        if (gameState.totalQuestions <= 10) return;
-
-        gameState.totalQuestions = 10;
-        showFeedbackMessage('Sessão curta de recuperação ativada ✅', 'info', 2500);
-        gameState.__petInterventionApplied = 'SHORT_RECOVERY_10Q';
-    }catch(_){}
-}
-/* ================== /PET Intervenções ================== */
-
-
 function loadStudentProfile() {
     try {
-        const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+        const raw = LS.get(PROFILE_STORAGE_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         gameState.studentProfile = {
             name: String(obj?.name || '').trim(),
@@ -759,7 +684,7 @@ function saveStudentProfile(profile) {
         turma: String(profile?.turma || '').trim().slice(0, 30),
         escola: String(profile?.escola || '').trim().slice(0, 60)
     };
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(safe));
+    LS.set(PROFILE_STORAGE_KEY, JSON.stringify(safe));
     gameState.studentProfile = safe;
     return safe;
 }
@@ -774,7 +699,7 @@ const MULT_PROGRESS_KEY = 'matemagica_mult_progress_map_v1';
 
 function loadMultProgressMap() {
     try {
-        const raw = localStorage.getItem(MULT_PROGRESS_KEY);
+        const raw = LS.get(MULT_PROGRESS_KEY);
         const map = raw ? JSON.parse(raw) : {};
         gameState.multiplication.progressByKey = (map && typeof map === 'object') ? map : {};
     } catch (e) {
@@ -785,7 +710,7 @@ function loadMultProgressMap() {
 
 function saveMultProgressMap() {
     try {
-        localStorage.setItem(MULT_PROGRESS_KEY, JSON.stringify(gameState.multiplication.progressByKey || {}));
+        LS.set(MULT_PROGRESS_KEY, JSON.stringify(gameState.multiplication.progressByKey || {}));
     } catch (e) {
         console.warn("Falha ao salvar progresso da tabuada por chave:", e);
     }
@@ -812,7 +737,7 @@ const PATH_PROGRESS_KEY = 'matemagica_path_progress_v1';
 
 function loadPathProgress() {
     try {
-        const raw = localStorage.getItem(PATH_PROGRESS_KEY);
+        const raw = LS.get(PATH_PROGRESS_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         return (obj && typeof obj === 'object') ? obj : {};
     } catch (e) {
@@ -821,7 +746,7 @@ function loadPathProgress() {
 }
 
 function savePathProgress(obj) {
-    try { localStorage.setItem(PATH_PROGRESS_KEY, JSON.stringify(obj || {})); } catch (e) {}
+    try { LS.set(PATH_PROGRESS_KEY, JSON.stringify(obj || {})); } catch (e) {}
 }
 
 function getPathDone(operation, level) {
@@ -1006,19 +931,19 @@ function ensureProfileUI() {
 
 
 function carregarXP() {
-    gameState.xp = parseInt(localStorage.getItem('matemagica_xp')) || 0;
+    gameState.xp = parseInt(LS.get('matemagica_xp')) || 0;
     playerXPElement.textContent = `XP: ${gameState.xp}`;
 }
 function atualizarXP(amount) {
     gameState.xp += amount;
     playerXPElement.textContent = `XP: ${gameState.xp}`;
-    localStorage.setItem('matemagica_xp', gameState.xp);
+    LS.set('matemagica_xp', gameState.xp);
 }
 
 /** Carrega os erros do jogador do Local Storage. */
 function carregarErros() {
     try {
-        const errorsJson = localStorage.getItem('matemagica_errors');
+        const errorsJson = LS.get('matemagica_errors');
         if (errorsJson) {
             gameState.errors = JSON.parse(errorsJson);
         }
@@ -1033,7 +958,7 @@ function salvarErros() {
     try {
         // Limita o número de erros salvos para não sobrecarregar o localStorage
         const errorsToSave = gameState.errors.slice(-50); 
-        localStorage.setItem('matemagica_errors', JSON.stringify(errorsToSave));
+        LS.set('matemagica_errors', JSON.stringify(errorsToSave));
     } catch (e) {
         console.error("Erro ao salvar erros no localStorage:", e);
     }
@@ -1045,7 +970,7 @@ const RANKING_STORAGE_KEY = 'matemagica_high_scores_v1';
 /** Carrega ranking (recordes) do localStorage */
 function carregarRanking() {
     try {
-        const raw = localStorage.getItem(RANKING_STORAGE_KEY);
+        const raw = LS.get(RANKING_STORAGE_KEY);
         gameState.highScores = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(gameState.highScores)) gameState.highScores = [];
     } catch (e) {
@@ -1057,7 +982,7 @@ function carregarRanking() {
 /** Salva ranking no localStorage */
 function salvarRanking() {
     try {
-        localStorage.setItem(RANKING_STORAGE_KEY, JSON.stringify(gameState.highScores || []));
+        LS.set(RANKING_STORAGE_KEY, JSON.stringify(gameState.highScores || []));
     } catch (e) {
         console.warn('Falha ao salvar ranking:', e);
     }
@@ -1203,7 +1128,7 @@ const TEACHER_PREFS_KEY = 'matemagica_teacher_prefs_v1';
 
 function loadTeacherPrefs() {
     try {
-        const raw = localStorage.getItem(TEACHER_PREFS_KEY);
+        const raw = LS.get(TEACHER_PREFS_KEY);
         const prefs = raw ? JSON.parse(raw) : {};
         if (prefs && typeof prefs === 'object') {
             if (prefs.projection) document.body.classList.add('projection-mode');
@@ -1213,7 +1138,7 @@ function loadTeacherPrefs() {
 }
 
 function saveTeacherPrefs(prefs) {
-    try { localStorage.setItem(TEACHER_PREFS_KEY, JSON.stringify(prefs || {})); } catch {}
+    try { LS.set(TEACHER_PREFS_KEY, JSON.stringify(prefs || {})); } catch {}
 }
 
 function initTeacherPanel() {
@@ -1277,7 +1202,7 @@ function initTeacherPanel() {
     document.body.appendChild(overlay);
 
     const prefs = (() => {
-        try { return JSON.parse(localStorage.getItem(TEACHER_PREFS_KEY) || '{}'); } catch { return {}; }
+        try { return JSON.parse(LS.get(TEACHER_PREFS_KEY) || '{}'); } catch { return {}; }
     })();
 
     const close = () => overlay.classList.add('hidden');
@@ -1361,7 +1286,7 @@ function initTeacherPanel() {
             reader.onload = () => {
                 try {
                     const data = JSON.parse(String(reader.result || '{}'));
-                    if (data.xp != null) { gameState.xp = Number(data.xp) || 0; localStorage.setItem('matemagica_xp', String(gameState.xp)); }
+                    if (data.xp != null) { gameState.xp = Number(data.xp) || 0; LS.set('matemagica_xp', String(gameState.xp)); }
                     if (Array.isArray(data.errors)) { gameState.errors = data.errors; salvarErros(); }
                     if (Array.isArray(data.highScores)) { gameState.highScores = data.highScores; salvarRanking(); }
                     if (data.teacherPrefs) { saveTeacherPrefs(data.teacherPrefs); loadTeacherPrefs(); }
@@ -1382,10 +1307,10 @@ function initTeacherPanel() {
     overlay.querySelector('#tp-reset').addEventListener('click', () => {
         if (!confirm('Tem certeza? Isso apaga XP, ranking e erros deste dispositivo.')) return;
         try {
-            localStorage.removeItem('matemagica_xp');
-            localStorage.removeItem('matemagica_errors');
-            localStorage.removeItem(RANKING_STORAGE_KEY);
-            localStorage.removeItem(TEACHER_PREFS_KEY);
+            LS.remove('matemagica_xp');
+            LS.remove('matemagica_errors');
+            LS.remove(RANKING_STORAGE_KEY);
+            LS.remove(TEACHER_PREFS_KEY);
         } catch {}
         showFeedbackMessage('Dados apagados. Recarregando...', 'info', 2000);
         setTimeout(() => location.reload(), 700);
@@ -1679,9 +1604,6 @@ function endTraining() {
 
     showFeedbackMessage('Treinamento concluído! 🎯', 'success', 2500);
 
-    // XP Ganho (apenas para histórico)
-    const xpGained = gameState.acertos * 2 - gameState.erros * 2;
-
 
 // 4. Registrar sessão para Relatório/Painel do Professor (offline)
 try {
@@ -1697,14 +1619,6 @@ try {
     appendSession({
         schemaVersion: '1.0',
         ts: Date.now(),
-        date: petIsoDate(Date.now()),
-        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
-        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
-        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
-        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
-        suspect: !!gameState.suspectSession,
-        interventionApplied: (gameState.__petInterventionApplied || null),
-
         operation: gameState.currentOperation,
         level: gameState.currentLevel,
         mode: gameState.isRapidMode ? 'rapido' : 'estudo',
@@ -1730,31 +1644,6 @@ try {
             trailMax: Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : null
         } : null
     });
-    // PET: decidir próximo plano (reduzir abandono / acelerar domínio)
-    try{
-        const skillKey = (gameState.currentSkillKey || petSkillKeyFromState());
-        const attempts = (gameState.acertos||0)+(gameState.erros||0);
-        const accuracy = attempts>0 ? Math.round(((gameState.acertos||0)/attempts)*1000)/10 : 0;
-        const avgSec = petAvgSec();
-        const errorsTop = petErrorsTopThisSession(5);
-        const plan = petDecideNextPlan({
-            skillKey,
-            accuracy,
-            errors: (gameState.erros||0),
-            attempts,
-            suspect: !!gameState.suspectSession,
-            avgSec,
-            errorsTop,
-            op: gameState.currentOperation,
-            level: gameState.currentLevel
-        });
-        gameState.__petNextPlan = plan;
-        // só grava plano se for aplicável
-        if (plan && plan.kind && plan.kind !== 'none'){
-            petSetPlan(skillKey, plan);
-        }
-    }catch(_){}
-
 } catch (e) {
     console.warn('Falha ao registrar sessão:', e);
 }
@@ -2285,7 +2174,7 @@ switch (level) {
 
 function loadMultiplicationConfig() {
     try {
-        const raw = localStorage.getItem('matemagica_mult_cfg');
+        const raw = LS.get('matemagica_mult_cfg');
         if (!raw) return;
         const cfg = JSON.parse(raw);
         if (!cfg || typeof cfg !== 'object') return;
@@ -2335,7 +2224,7 @@ function saveMultiplicationConfig() {
             trailPairs: gameState.multiplication.trailPairs,
             trailPairIndex: gameState.multiplication.trailPairIndex
         };
-        localStorage.setItem('matemagica_mult_cfg', JSON.stringify(payload));
+        LS.set('matemagica_mult_cfg', JSON.stringify(payload));
     
         // também salva o progresso por faixa (para o mapa e para alternar níveis sem perder o ponto)
         try { setSavedTrailIndexForKey(gameState.multiplication.trailRangeKey, gameState.multiplication.trailPairIndex); } catch (_) {}
@@ -3049,29 +2938,6 @@ gameState.isGameActive = true;
         gameState.totalQuestions = Math.max(1, Math.floor(__cfg.totalQuestions));
     }
 
-    // PET: skillKey + plano de intervenção (se houver)
-    try{
-        gameState.currentSkillKey = petSkillKeyFromState();
-        const plan = petGetPlan(gameState.currentSkillKey);
-        gameState.__petPlan = plan;
-        gameState.__petInterventionApplied = null;
-        if (plan && plan.kind && plan.kind !== 'none'){
-            // aplica apenas planos marcados como autoApply, ou planos de recuperação/revisão (seguros)
-            const shouldApply = !!plan.autoApply || plan.kind === 'recovery' || plan.kind === 'review';
-            if (shouldApply){
-                if (plan.forceStudyMode) gameState.isRapidMode = false;
-                if (plan.overrideLevel) gameState.currentLevel = plan.overrideLevel;
-                if (Number.isFinite(plan.totalQuestions)) gameState.totalQuestions = Math.max(1, Math.floor(plan.totalQuestions));
-                if (plan.disableTimer) gameState.isRapidMode = false;
-                gameState.__petInterventionApplied = `PLAN_${String(plan.kind).toUpperCase()}`;
-                // consome o plano após aplicar (evita repetir indefinidamente)
-                petClearPlan(gameState.currentSkillKey);
-            }
-        }
-    }catch(_){}
-
-
-
     // Mostra/oculta o timer conforme modo (Estudo/Defasagem sem pressão)
     const __timerContainer = document.getElementById('timer-container');
     if (__timerContainer) __timerContainer.style.display = gameState.isRapidMode ? 'block' : 'none';
@@ -3281,10 +3147,10 @@ function saveError(question, userAnswer) {
 /* ------------------ Pedagogia: skillTag + explicação (v20) ------------------ */
 const TRAIN_SEEN_KEY = 'pet_seen_train_ids_v1';
 function loadSeenTrain(){
-  try{ return JSON.parse(localStorage.getItem(TRAIN_SEEN_KEY) || '{}'); }catch(_){ return {}; }
+  try{ return JSON.parse(LS.get(TRAIN_SEEN_KEY) || '{}'); }catch(_){ return {}; }
 }
 function saveSeenTrain(map){
-  try{ localStorage.setItem(TRAIN_SEEN_KEY, JSON.stringify(map)); }catch(_){}
+  try{ LS.set(TRAIN_SEEN_KEY, JSON.stringify(map)); }catch(_){}
 }
 function rememberTrainItem(q){
   try{
@@ -3509,7 +3375,6 @@ function buildQuestionFromNumbers(op, a, b){
 
         // Pontos e XP (menos pontos se acertar depois de errar)
         gameState.acertos++;
-        try{ petMaybeActivateShortSession(); }catch(_){ }
         const baseGain = gameState.isRapidMode ? 20 * gameState.questionNumber : 10;
         const multiplier = (gameState.attemptsThisQuestion === 0) ? 1 : 0.7;
         const scoreGain = Math.round(baseGain * multiplier);
@@ -3557,7 +3422,6 @@ function buildQuestionFromNumbers(op, a, b){
 
     // Salva erro (mesmo que depois acerte, isso ajuda a mapear as dificuldades)
     gameState.erros++;
-    try{ petMaybeActivateShortSession(); }catch(_){ }
     atualizarXP(-2);
     saveError(q, selectedAnswer);
 
@@ -3781,22 +3645,6 @@ try {
     appendSession({
         schemaVersion: '1.0',
         ts: Date.now(),
-        date: petIsoDate(Date.now()),
-        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
-        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
-        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
-        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
-        suspect: !!gameState.suspectSession,
-        interventionApplied: (gameState.__petInterventionApplied || null),
-
-        date: petIsoDate(Date.now()),
-        skillKey: (function(){ try{ return (gameState.currentSkillKey || petSkillKeyFromState()); }catch(_){ return null; } })(),
-        accuracy: (function(){ const tot=(gameState.acertos||0)+(gameState.erros||0); return tot>0? Math.round(((gameState.acertos||0)/tot)*1000)/10 : 0; })(),
-        avgSec: (function(){ const v = petAvgSec(); return (v==null? null : v); })(),
-        errorsTop: (function(){ return petErrorsTopThisSession(5); })(),
-        suspect: !!gameState.suspectSession,
-        interventionApplied: (gameState.__petInterventionApplied || null),
-
         operation: gameState.currentOperation,
         level: gameState.currentLevel,
         mode: gameState.isRapidMode ? 'rapido' : 'estudo',
@@ -3822,31 +3670,6 @@ try {
             trailMax: Number.isInteger(gameState.multiplication.trailMax) ? gameState.multiplication.trailMax : null
         } : null
     });
-    // PET: decidir próximo plano (reduzir abandono / acelerar domínio)
-    try{
-        const skillKey = (gameState.currentSkillKey || petSkillKeyFromState());
-        const attempts = (gameState.acertos||0)+(gameState.erros||0);
-        const accuracy = attempts>0 ? Math.round(((gameState.acertos||0)/attempts)*1000)/10 : 0;
-        const avgSec = petAvgSec();
-        const errorsTop = petErrorsTopThisSession(5);
-        const plan = petDecideNextPlan({
-            skillKey,
-            accuracy,
-            errors: (gameState.erros||0),
-            attempts,
-            suspect: !!gameState.suspectSession,
-            avgSec,
-            errorsTop,
-            op: gameState.currentOperation,
-            level: gameState.currentLevel
-        });
-        gameState.__petNextPlan = plan;
-        // só grava plano se for aplicável
-        if (plan && plan.kind && plan.kind !== 'none'){
-            petSetPlan(skillKey, plan);
-        }
-    }catch(_){}
-
 } catch (e) {
     console.warn('Falha ao registrar sessão:', e);
 }
@@ -4274,7 +4097,7 @@ function todayStr() {
 
 function loadDaily() {
     try {
-        const raw = localStorage.getItem(DAILY_KEY);
+        const raw = LS.get(DAILY_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         if (!obj || typeof obj !== 'object') return {};
         return obj;
@@ -4284,7 +4107,7 @@ function loadDaily() {
 }
 
 function saveDaily(obj) {
-    try { localStorage.setItem(DAILY_KEY, JSON.stringify(obj || {})); } catch (_) {}
+    try { LS.set(DAILY_KEY, JSON.stringify(obj || {})); } catch (_) {}
 }
 
 function updateDailyProgress(addQuestions) {
@@ -4355,7 +4178,7 @@ function updateHomeDailyUI() {
 
 function loadCampaignState() {
     try {
-        const raw = localStorage.getItem(CAMPAIGN_KEY);
+        const raw = LS.get(CAMPAIGN_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         if (!obj || typeof obj !== 'object') return {};
         return obj;
@@ -4365,7 +4188,7 @@ function loadCampaignState() {
 }
 
 function saveCampaignState(state) {
-    try { localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(state || {})); } catch (_) {}
+    try { LS.set(CAMPAIGN_KEY, JSON.stringify(state || {})); } catch (_) {}
 }
 
 function getSelectedCampaignId() {
@@ -4603,7 +4426,7 @@ function completeCampaignLesson(cfg, stats) {
 
 function loadMentorPref() {
     try {
-        const raw = localStorage.getItem(MENTOR_KEY);
+        const raw = LS.get(MENTOR_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         gameState.mentor.enabled = (obj.enabled !== false);
     } catch (_) {
@@ -4612,7 +4435,7 @@ function loadMentorPref() {
 }
 
 function saveMentorPref() {
-    try { localStorage.setItem(MENTOR_KEY, JSON.stringify({ enabled: !!gameState.mentor.enabled })); } catch (_) {}
+    try { LS.set(MENTOR_KEY, JSON.stringify({ enabled: !!gameState.mentor.enabled })); } catch (_) {}
 }
 
 function setMentorEnabled(on) {
@@ -4626,14 +4449,14 @@ function setMentorEnabled(on) {
 // --- Dificuldades (substitui 'Mentores' como menu de seleção) ---
 function loadDifficultyFocus() {
     try {
-        const raw = localStorage.getItem('matemagica_diff_focus');
+        const raw = LS.get('matemagica_diff_focus');
         if (!raw) return [];
         const arr = JSON.parse(raw);
         return Array.isArray(arr) ? arr : [];
     } catch (_) { return []; }
 }
 function saveDifficultyFocus(arr) {
-    try { localStorage.setItem('matemagica_diff_focus', JSON.stringify(arr || [])); } catch (_) {}
+    try { LS.set('matemagica_diff_focus', JSON.stringify(arr || [])); } catch (_) {}
 }
 function openDifficultiesModal() {
     const modal = document.getElementById('difficulties-modal');
@@ -4716,7 +4539,7 @@ function mentorPlanMessage() {
 
 function loadUiPrefs() {
     try {
-        const raw = localStorage.getItem(UI_PREFS_KEY);
+        const raw = LS.get(UI_PREFS_KEY);
         const obj = raw ? JSON.parse(raw) : {};
         if (obj && typeof obj === 'object') {
             gameState.uiPrefs.textScale = Number(obj.textScale || 1) || 1;
@@ -4729,7 +4552,7 @@ function loadUiPrefs() {
 
 function saveUiPrefs() {
     try {
-        localStorage.setItem(UI_PREFS_KEY, JSON.stringify(gameState.uiPrefs));
+        LS.set(UI_PREFS_KEY, JSON.stringify(gameState.uiPrefs));
     } catch (_) {}
 }
 
@@ -4922,13 +4745,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // v19.1 — Defaults para turma fraca (Base seguro)
 try{
     const FIRST_RUN_KEY = 'matemagica_first_run_v19_1';
-    if(!localStorage.getItem(FIRST_RUN_KEY)){
+    if(!LS.get(FIRST_RUN_KEY)){
         // Sempre começa no Base
         if (typeof setSelectedCampaignId === 'function') setSelectedCampaignId('base');
         // Base seguro: sem timer e leitura de voz ON
         gameState.isRapidMode = false;
         gameState.isVoiceReadActive = true;
-        localStorage.setItem(FIRST_RUN_KEY, '1');
+        LS.set(FIRST_RUN_KEY, '1');
     }
 }catch(_){};
 attachEventListeners();
@@ -5003,11 +4826,11 @@ attachEventListeners();
 
   function loadMastery(){
     try{
-      return JSON.parse(localStorage.getItem(MASTER_KEY) || '{"skills":{},"week":{"days":[]}}');
+      return JSON.parse(LS.get(MASTER_KEY) || '{"skills":{},"week":{"days":[]}}');
     }catch(e){ return {"skills":{},"week":{"days":[]}}; }
   }
   function saveMastery(m){
-    try{ localStorage.setItem(MASTER_KEY, JSON.stringify(m)); }catch(e){}
+    try{ LS.set(MASTER_KEY, JSON.stringify(m)); }catch(e){}
   }
   function recordDayPractice(){
     const m = loadMastery();
@@ -5481,14 +5304,14 @@ attachEventListeners();
 
   function loadMission(){
     try{
-      return JSON.parse(localStorage.getItem(MISSION_KEY) || '{"date":"","done":false,"type":"","doneTs":0}');
+      return JSON.parse(LS.get(MISSION_KEY) || '{"date":"","done":false,"type":"","doneTs":0}');
     }catch(e){
       return {date:'',done:false,type:'',doneTs:0};
     }
   }
 
   function saveMission(m){
-    try{ localStorage.setItem(MISSION_KEY, JSON.stringify(m)); }catch(e){}
+    try{ LS.set(MISSION_KEY, JSON.stringify(m)); }catch(e){}
   }
 
   function ensureMissionToday(){

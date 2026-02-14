@@ -1,3 +1,17 @@
+
+// PET Escolar Offline v1 — resolver de chaves por aluno (relatório)
+const SCHOOL_KEY = 'pet_school_v1';
+const PER_STUDENT_KEYS = new Set([
+  'matemagica_profile_v1','matemagica_sessions_v1','matemagica_attempts_v1','matemagica_mastery_v1',
+  'matemagica_missions_v1','matemagica_mult_progress_map_v1','matemagica_path_progress_v1','matemagica_daily_v1',
+  'matemagica_mentor_v1','matemagica_high_scores_v1','matemagica_xp','matemagica_errors','matemagica_diff_focus',
+  'matemagica_mult_cfg','pet_study_progress_v1','pet_seen_train_ids_v1'
+]);
+function schoolLoad(){ try{ const raw=LS.get(SCHOOL_KEY); return raw?JSON.parse(raw):null; }catch(_){ return null; } }
+function activeStudentId(){ const sch=schoolLoad(); const sid=sch&&sch.active&&sch.active.studentId; return sid?String(sid):null; }
+function keyFor(baseKey){ if(!baseKey||typeof baseKey!=='string') return baseKey; if(!PER_STUDENT_KEYS.has(baseKey)) return baseKey; const sid=activeStudentId(); if(!sid) return baseKey; return `${baseKey}__${sid}`; }
+const LS = { get:(k)=>{try{return LS.get(keyFor(k));}catch(_){return null;}}, set:(k,v)=>{try{LS.set(keyFor(k),v);}catch(_){}} };
+
 /* Relatório do Estudante — Matemágica (offline)
    - Gera código MMR1 + QR + JSON/CSV
    - Usa sessões salvas pelo app em: matemagica_sessions_v1
@@ -8,7 +22,6 @@
 
   const PROFILE_KEY = 'matemagica_profile_v1';
   const SESSIONS_KEY = 'matemagica_sessions_v1';
-const ATTEMPTS_KEY = 'matemagica_attempts_v1';
   const ERRORS_KEY = 'matemagica_errors';
   const XP_KEY = 'matemagica_xp';
 
@@ -68,7 +81,7 @@ const ATTEMPTS_KEY = 'matemagica_attempts_v1';
   }
 
   function readProfile(){
-    const p = safeParse(localStorage.getItem(PROFILE_KEY), {});
+    const p = safeParse(LS.get(PROFILE_KEY), {});
     return {
       name: String(p?.name || '').trim(),
       turma: String(p?.turma || '').trim(),
@@ -77,17 +90,17 @@ const ATTEMPTS_KEY = 'matemagica_attempts_v1';
   }
 
   function loadSessions(){
-    const arr = safeParse(localStorage.getItem(SESSIONS_KEY), []);
+    const arr = safeParse(LS.get(SESSIONS_KEY), []);
     return Array.isArray(arr) ? arr : [];
   }
 
   function loadErrors(){
-    const arr = safeParse(localStorage.getItem(ERRORS_KEY), []);
+    const arr = safeParse(LS.get(ERRORS_KEY), []);
     return Array.isArray(arr) ? arr : [];
   }
 
   function loadXp(){
-    const v = parseInt(localStorage.getItem(XP_KEY) || '0', 10);
+    const v = parseInt(LS.get(XP_KEY) || '0', 10);
     return Number.isFinite(v) ? v : 0;
   }
 
@@ -166,34 +179,6 @@ const ATTEMPTS_KEY = 'matemagica_attempts_v1';
     document.body.appendChild(a);
     a.click();
     setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
-  }
-
-  function buildFullExport(range){
-    const profile = JSON.parse(localStorage.getItem('matemagica_profile_v1') || 'null');
-    const sessoes = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
-    const tentativas = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '[]');
-
-    const inRange = (iso) => {
-      if (!range || !range.start || !range.end) return true;
-      const t = new Date(iso).getTime();
-      return t >= new Date(range.start).getTime() && t <= new Date(range.end).getTime();
-    };
-
-    const sessoesFiltradas = sessoes.filter(s => inRange(s.dateISO || s.date || s.data));
-    const tentativasFiltradas = tentativas.filter(a => inRange(a.dateISO || a.date || a.data));
-
-    return {
-      exportType: 'matemagica_full_export_v1',
-      createdAtISO: new Date().toISOString(),
-      range,
-      profile,
-      sessions: sessoesFiltradas,
-      attempts: tentativasFiltradas,
-      counts: {
-        sessions: sessoesFiltradas.length,
-        attempts: tentativasFiltradas.length
-      }
-    };
   }
 
   function buildReport(){
@@ -361,9 +346,9 @@ const topMistakes = summarizeTop(errors, (e)=>{
     const now = Date.now();
     const since = now - days*24*60*60*1000;
 
-    const profile = safeJson(localStorage.getItem(PROFILE_KEY), null);
-    const sessions = safeJson(localStorage.getItem(SESSIONS_KEY), []);
-    const errors = safeJson(localStorage.getItem(ERRORS_KEY), []);
+    const profile = safeJson(LS.get(PROFILE_KEY), null);
+    const sessions = safeJson(LS.get(SESSIONS_KEY), []);
+    const errors = safeJson(LS.get(ERRORS_KEY), []);
 
     const weekSessions = Array.isArray(sessions) ? sessions.filter(s => (s && Number(s.ts) >= since)) : [];
     const weekErrors = Array.isArray(errors) ? errors.filter(e => (e && Number(e.ts) >= since)) : [];
